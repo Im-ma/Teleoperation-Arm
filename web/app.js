@@ -29,7 +29,8 @@ const S = {
   hist: [], lastArm: "right", sim: false,
 };
 const live = () => S.robot === "live";
-const robotZero = () => (live() && S.ready ? S.ready : SIM_READY);
+// The twin rests in the saved start pose as soon as the bridge reports one, connected or not.
+const robotZero = () => (S.ready ? S.ready : SIM_READY);
 const limits = () => (live() ? S.limits : SIM_LIMITS);
 let M = createMirror();
 const filt = new FeatureFilter();
