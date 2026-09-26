@@ -119,7 +119,7 @@ function frame(now) {
   // Before locking, whichever arm is closer to the goalpost is the candidate.
   let r = null;
   if (L) {
-    const arms = ["left"].map(a => armFeatures(L, W, hr, a, w, h)).filter(Boolean);
+    const arms = ["right"].map(a => armFeatures(L, W, hr, a, w, h)).filter(Boolean);
     arms.sort((a, b) => goalpostScore(b) - goalpostScore(a) + 0.01 * ((b.arm === S.lastArm) - (a.arm === S.lastArm)));
     r = arms[0] || null;
   }
@@ -249,7 +249,7 @@ function states() {
 function pill(id, cls, text) { const el = $(id); el.className = "pill " + cls; el.lastElementChild.textContent = text }
 function pills() {
   pill("#pCam", S.stream || params.get("video") ? "ok" : "", S.stream ? "camera on" : params.get("video") ? "recording" : "camera off");
-  pill("#pTrack", lastR ? "ok" : "warn", lastR ? `right arm · ${S.fps} fps` : "no one in view");
+  pill("#pTrack", lastR ? "ok" : "warn", lastR ? `${lastR.arm} arm · ${S.fps} fps` : "no one in view");
   const b = { live: ["ok", S.engaged ? "robot · engaged" : "robot · " + S.mode], sim: ["warn", "twin only"], connecting: ["warn", "connecting…"], error: ["bad", "robot error"], offline: ["bad", "bridge offline"] }[S.robot] || ["", S.robot];
   pill("#pBot", ...b);
   pill("#pVoice", voice.muted ? "" : voice.unlocked ? "ok" : "warn", voice.muted ? "muted" : voice.unlocked ? "voice on" : "click for voice");
