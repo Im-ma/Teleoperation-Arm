@@ -25,6 +25,11 @@ from aiohttp import WSMsgType, web
 from so101_teleop.constants import CALIBRATION_DIR
 from so101_teleop.pose_mapping import JOINTS, limits_from_calibration
 
+import sponsors
+from telemetry import Telemetry
+
+sponsors.load_env()
+
 HERE = Path(__file__).resolve().parent
 WEB_DIR = HERE / "web"
 MODEL_DIR = HERE / "models"
@@ -35,6 +40,8 @@ MAX_STEP = 4.0
 HOME_STEP = 1.5
 BLEND_S = 1.5
 TEST_DELTA = 12.0
+GESTURE_STEP = 3.0  # degrees per tick for gestures, about 90 deg/s
+DEADMAN_S = 0.4     # no target from the page for this long: hold still
 READY_DEFAULT = {**{j: 0.0 for j in JOINTS}, "gripper": 10.0}
 
 
@@ -110,6 +117,7 @@ class Bridge:
         self.blend, self.errors, self.clients, self.task, self.seen = 0.0, 0, set(), None, False
         self.lock = asyncio.Lock()
         self.lim, self.ready = limits(), load_ready()
+        self.blend_s, self.target_t, self.tele = BLEND_S, 0.0, Telemetry()
 
     async def send_all(self, m):
         for ws in list(self.clients):
@@ -130,6 +138,7 @@ class Bridge:
             "ready": self.ready,
             "calibration_id": cal_id,
             "ports": list_ports(),
+            "keys": sponsors.keys(),
         }
 
     async def say(self, msg, mode=None):
@@ -223,12 +232,12 @@ class Bridge:
                 pass
         await self.send_all(self.status())
 
-    async def move_to(self, goal, timeout=12):
+    async def move_to(self, goal, timeout=12, settle=0.7):
         self.goal = self.clip(goal)
         t0 = time.monotonic()
         while time.monotonic() - t0 < timeout and any(abs(self.cmd.get(j, 1e9) - v) > 0.01 for j, v in self.goal.items()):
             await asyncio.sleep(0.1)
-        await asyncio.sleep(0.7)
+        await asyncio.sleep(settle)
         return {j: self.obs[j] - v for j, v in self.goal.items() if j in self.obs}
 
     async def home(self):
@@ -254,6 +263,13 @@ class Bridge:
             await self.move_to(base)
         bad = [r["joint"] for r in results if not r["ok"]]
         await self.say("Self-test passed: all 6 joints respond." if not bad else "Self-test: check " + ", ".join(bad), "idle")
+
+    async def gesture(self, name):
+        await self.say(f"Gesture: {name.replace('_', ' ')}", "gesture")
+        await self.move_to(self.ready, timeout=6, settle=0.1)
+        for frame in sponsors.GESTURES[name]:
+            await self.move_to({j: v + frame.get(j, 0.0) for j, v in self.ready.items()}, timeout=4, settle=0.05)
+        await self.say("Ready. Strike the pose to take over.", "idle")
 
     async def limp(self, on):
         self.stop_task()
@@ -286,14 +302,18 @@ class Bridge:
                 if tick % 3 == 0:
                     await self.read()
                     await self.send_all({"type": "obs", "joints": self.obs})
+                    self.tele.record(self.mode, self.target, self.obs)
                 goal, step = None, HOME_STEP
-                if self.mode == "engaged" and self.target:
-                    self.blend = min(1.0, self.blend + 1 / (BLEND_S * HZ))
+                stale = time.monotonic() - self.target_t
+                if self.mode == "engaged" and stale > 2.0:
+                    await self.say("Lost the page. Holding position.", "idle")
+                elif self.mode == "engaged" and self.target and stale < DEADMAN_S:
+                    self.blend = min(1.0, self.blend + 1 / (self.blend_s * HZ))
                     a = self.blend * self.blend * (3 - 2 * self.blend)
                     goal = {j: self.hold.get(j, t) + a * (t - self.hold.get(j, t)) for j, t in self.clip(self.target).items()}
                     step = MAX_STEP
-                elif self.mode in ("homing", "testing"):
-                    goal = self.goal
+                elif self.mode in ("homing", "testing", "gesture"):
+                    goal, step = self.goal, GESTURE_STEP if self.mode == "gesture" else HOME_STEP
                 if goal:
                     for j, t in goal.items():
                         s = step * (3 if j == "gripper" else 1)
@@ -317,6 +337,11 @@ async def handle(d):
     t = d.get("type")
     if t == "target":
         B.target = {j: float(v) for j, v in d.get("joints", {}).items() if j in JOINTS}
+        B.target_t = time.monotonic()
+        if not B.robot and B.tele.session and len(B.tele.rows) % 3 == 0:
+            B.tele.record("sim", B.target, {})
+    elif t == "engage" and not B.robot:
+        B.tele.start_session("twin") if d.get("on") else B.tele.end_session()
     elif t == "connect":
         await B.connect()
     elif t == "reference" and B.robot:
@@ -326,11 +351,17 @@ async def handle(d):
     elif t == "engage":
         if d.get("on") and B.mode == "idle":
             B.hold, B.blend = dict(B.cmd), 0.0
+            B.blend_s = float(np.clip(d.get("blend_s", BLEND_S), 1.0, 3.0))
+            B.target_t = time.monotonic()
+            B.tele.start_session("mirror")
             await B.say("Engaged: easing onto your pose…", "engaged")
         elif not d.get("on") and B.mode == "engaged":
+            B.tele.end_session()
             await B.say("Stopped. Holding position.", "idle")
         else:
             await B.send_all(B.status())
+    elif t == "gesture" and B.mode == "idle" and d.get("name") in sponsors.GESTURES:
+        B.run(B.gesture(d["name"]))
     elif t == "home" and B.mode != "limp":
         B.run(B.home())
     elif t == "selftest" and B.mode == "idle":
@@ -346,6 +377,8 @@ async def ws_handler(req):
     await ws.prepare(req)
     B.clients.add(ws)
     await ws.send_json(B.status())
+    if len(B.clients) == 1 and B.robot and B.mode == "idle":
+        B.run(B.home())  # a fresh page: glide to the goalpost pose so people know what to copy
     async for m in ws:
         if m.type == WSMsgType.TEXT:
             await handle(json.loads(m.data))
@@ -363,6 +396,31 @@ async def api_cmd(req):
     body = await req.json() if req.can_read_body else {}
     await handle({**body, "type": req.match_info["cmd"]})
     return web.json_response({**B.status(), "joints": B.obs})
+
+
+async def api_tts(req):
+    body = await req.json()
+    audio = await sponsors.tts(str(body.get("text", "")))
+    return web.Response(body=audio, content_type="audio/mpeg") if audio else web.Response(status=204)
+
+
+async def api_command(req):
+    body = await req.json()
+    out = await sponsors.command(str(body.get("text", "")))
+    g = out["gesture"]
+    out["frames"] = sponsors.GESTURES.get(g, [])
+    out["played"] = bool(B.robot and B.mode == "idle" and g in sponsors.GESTURES)
+    if out["played"]:
+        B.run(B.gesture(g))
+    return web.json_response(out)
+
+
+async def api_sessions(_):
+    return web.json_response({"sessions": B.tele.list(), "tiger": bool(B.tele.db)})
+
+
+async def api_telemetry(req):
+    return web.json_response({"rows": B.tele.get(req.query.get("session", ""))})
 
 
 def from_internet(req):
@@ -387,6 +445,7 @@ async def start_loop(app):
 
     ensure_models(MODEL_DIR)
     app["loop"] = asyncio.create_task(B.loop())
+    app["tele"] = asyncio.create_task(B.tele.run_writer())
     if B.connect_robot and B._candidate_ports():
         B.seen = True
         asyncio.create_task(B.connect())
@@ -399,6 +458,10 @@ def build_app() -> web.Application:
             web.get("/", index),
             web.get("/ws", ws_handler),
             web.get("/api/state", api_state),
+            web.get("/api/sessions", api_sessions),
+            web.get("/api/telemetry", api_telemetry),
+            web.post("/api/tts", api_tts),
+            web.post("/api/command", api_command),
             web.post("/api/{cmd}", api_cmd),
             web.static("/models", MODEL_DIR),
             web.static("/web", WEB_DIR),
