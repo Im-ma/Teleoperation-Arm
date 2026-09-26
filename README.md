@@ -21,7 +21,7 @@ The first working milestone is intentionally small:
 
 ## Marionette: full-arm web teleop (real robot)
 
-[`marionette/`](marionette/) drives the physical SO-101 follower from the camera: shoulder, elbow, wrist, roll and gripper, not just the hand. It runs in the browser with a 3D twin, a guided sync wizard, a ready pose, a joint self-test and an HTTP API. Research notes (hardware failures, joint matching, safety) are in [`docs/RESEARCH.md`](docs/RESEARCH.md); a walkthrough of the code and its open-source sources is in [`docs/CODE_GUIDE.md`](docs/CODE_GUIDE.md). The new goalpost-pose matching plan is in [`docs/POSE_MATCH_PLAN.md`](docs/POSE_MATCH_PLAN.md).
+[`marionette/`](marionette/) drives the physical SO-101 follower from the camera: shoulder, elbow, wrist, roll and gripper, not just the hand. It runs in the browser with a 3D twin, a guided sync wizard, a ready pose, a joint self-test and an HTTP API. Research notes (hardware failures, joint matching, safety) are in [`docs/RESEARCH.md`](docs/RESEARCH.md); a walkthrough of the code and its open-source sources is in [`docs/CODE_GUIDE.md`](docs/CODE_GUIDE.md). The new goalpost-pose matching plan is in [`docs/POSE_MATCH_PLAN.md`](docs/POSE_MATCH_PLAN.md), and the full live-mirror architecture (draft for review) is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Project structure
 
