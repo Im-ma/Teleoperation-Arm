@@ -1,0 +1,13 @@
+{
+  "name": "mimic-demonstration",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "node server.mjs",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "three": "0.170.0",
+    "playwright-core": "1.56.1"
+  }
+}
