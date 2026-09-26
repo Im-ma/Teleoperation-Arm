@@ -19,6 +19,10 @@ The first working milestone is intentionally small:
 - Show robot/hand/control state in a lightweight operator interface
 - Include a clear pause/stop control
 
+## Marionette: full-arm web teleop (real robot)
+
+[`marionette/`](marionette/) drives the physical SO-101 follower from the camera: shoulder, elbow, wrist, roll and gripper, not just the hand. It runs in the browser with a 3D twin, a guided sync wizard, a ready pose, a joint self-test and an HTTP API. Research notes (hardware failures, joint matching, safety) are in [`docs/RESEARCH.md`](docs/RESEARCH.md).
+
 ## Project structure
 
 ```
