@@ -184,7 +184,8 @@ function draw(pr, r, fr, out) {
   if (st === "HOMING" || st === "BOOT") ghost(r, 0);
   if (L) {
     ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 3;
-    for (const [a, b] of [[11, 12], [11, 23], [12, 24], [23, 24], [12, 14], [14, 16]]) line(P(L[a]), P(L[b]));   // torso + your right arm only
+    const [s, e, wr] = r?.idx || [12, 14, 16];
+    for (const [a, b] of [[11, 12], [11, 23], [12, 24], [23, 24], [s, e], [e, wr]]) line(P(L[a]), P(L[b]));   // torso + the tracked arm only
   }
   if (r) {
     const [s, e, wr] = r.idx.map(i => P(L[i])), c = mirroring ? "#c8ff3d" : st === "HOLD" ? "#ffb13d" : "#ffffff";

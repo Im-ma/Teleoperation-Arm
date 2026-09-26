@@ -61,9 +61,21 @@ export function handFeatures(Hn, Hw, F, fore, w, h) {
 }
 
 // Everything for one arm: features, per-joint confidence (0..1) and the body frame.
+// MediaPipe labels sides per frame and sometimes swaps them (profile, hips out of frame, crossed arms).
+// Facing the camera your right shoulder sits on the image's left, so when 12 lands right of 11 the labels
+// flipped: read the same physical arm from the other index set. Near profile the gap is ambiguous, so keep
+// the last verdict until the shoulders clearly separate again.
+let flipped = false;
+export function physicalSide(L, arm) {
+  const gap = L[11].x - L[12].x;                // > 0 when facing the camera with labels intact
+  if (gap > 0.03) flipped = false; else if (gap < -0.03) flipped = true;
+  return flipped ? (arm === "right" ? "left" : "right") : arm;
+}
+
 export function armFeatures(L, W, hands, arm, w, h) {
-  const [s, e, wr] = SIDE[arm];
-  const F = bodyFrame(L, arm, w, h);
+  const side = physicalSide(L, arm);
+  const [s, e, wr] = SIDE[side];
+  const F = bodyFrame(L, side, w, h);
   if (!F) return null;
   const P = i => [L[i].x * w, L[i].y * h], vis = i => L[i].visibility ?? 1;
   const up = sub(P(e), P(s)), fore = sub(P(wr), P(e));
@@ -72,11 +84,11 @@ export function armFeatures(L, W, hands, arm, w, h) {
   f.elbow = wrap(ang(F, fore) - f.lift);
   conf.lift = len(up) > 0.2 * F.sw ? Math.min(vis(s), vis(e)) : 0;
   conf.elbow = len(fore) > 0.2 * F.sw ? Math.min(conf.lift, vis(wr)) : 0;
-  const { pan, yaw } = panAngle(W, arm);
+  const { pan, yaw } = panAngle(W, side);
   f.pan = pan; conf.pan = pan === undefined || yaw > 25 ? 0 : conf.lift;
   // the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,
   // and within a third of a shoulder width (so a stray hand across the body is never taken)
-  const ow = SIDE[arm === "right" ? "left" : "right"][2];
+  const ow = SIDE[side === "right" ? "left" : "right"][2];
   let H = null, Hw = null, best = 0.35 * F.sw;
   (hands?.landmarks || []).forEach((hl, i) => {
     const hx = hl[0].x * w, hy = hl[0].y * h;
