@@ -27,6 +27,18 @@ Current mapping is **range sync**: 9 held poses record the user's min/max per fe
 
 Proposed next: **angle-for-angle matching.** Use one shared reference (both arms straight up = the robot's ready pose), then map 1° of human joint change to 1° of robot joint change. Engaging then means "raise your arm to match the robot", and the sync shrinks to about 3 poses (to confirm each joint's direction).
 
+### Angle-for-angle design
+
+![Human arm to SO-101 joint map](img/joint-map.svg)
+
+![How each joint angle is measured](img/joint-angles.svg)
+
+- **Shared zero:** your arm straight up and the robot's straight-up ready pose both count as 0°. After that, 1° of yours is 1° of the robot's, clipped to its limits.
+- **Engage:** raise your arm to match the robot. Control starts only when every joint is within ~10°, so nothing jumps.
+- **Pan singularity:** when the upper arm is near vertical its heading is undefined, so the base holds its last value (`mapping.mjs` needs >20% horizontal component).
+- **Roll:** from the knuckle-line tilt, still capped at ±147° ([why](#wrist-roll-wrap)).
+- **Sync** shrinks to a few poses that only confirm each joint's direction.
+
 Smoothing is an adaptive EMA: a big move gets α up to 0.85 (responsive), jitter gets α ≈ 0.2 (steady).
 
 ## Hardware findings

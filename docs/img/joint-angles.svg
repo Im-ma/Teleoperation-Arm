@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" viewBox="0 0 680 435" role="img"><title>How each joint angle is measured</title>
+<style>
+svg{--s:#5F5E5A;--t:#888780;--b:#B4B2A9;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+text{fill:#2C2C2A}.th{font-size:14px;font-weight:500}.ts{font-size:12px;fill:#5F5E5A}
+.c-gray>rect{fill:#F1EFE8;stroke:#888780;stroke-width:1}
+circle.c-pink,.c-pink>rect{fill:#FBEAF0;stroke:#D4537E;stroke-width:1.5}.c-pink text{fill:#72243E}
+circle.c-coral,.c-coral>rect{fill:#FAECE7;stroke:#D85A30;stroke-width:1.5}.c-coral text{fill:#712B13}
+circle.c-purple,.c-purple>rect{fill:#EEEDFE;stroke:#7F77DD;stroke-width:1.5}.c-purple text{fill:#3C3489}
+circle.c-amber,.c-amber>rect{fill:#FAEEDA;stroke:#BA7517;stroke-width:1.5}.c-amber text{fill:#633806}
+circle.c-teal,.c-teal>rect{fill:#E1F5EE;stroke:#1D9E75;stroke-width:1.5}.c-teal text{fill:#085041}
+circle.c-blue,.c-blue>rect{fill:#E6F1FB;stroke:#378ADD;stroke-width:1.5}.c-blue text{fill:#0C447C}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#D4537E" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+<rect width="680" height="435" fill="#FFFFFF"/>
+<g fill="none" stroke="#B4B2A9" stroke-width="0.8">
+<rect x="40" y="20" width="194" height="180" rx="8"/><rect x="243" y="20" width="194" height="180" rx="8"/><rect x="446" y="20" width="194" height="180" rx="8"/>
+<rect x="40" y="215" width="194" height="180" rx="8"/><rect x="243" y="215" width="194" height="180" rx="8"/><rect x="446" y="215" width="194" height="180" rx="8"/>
+</g>
+<circle class="c-teal" cx="58" cy="42" r="5"/><text class="th" x="70" y="47">shoulder_lift</text>
+<circle class="c-amber" cx="261" cy="42" r="5"/><text class="th" x="273" y="47">elbow_flex</text>
+<circle class="c-purple" cx="464" cy="42" r="5"/><text class="th" x="476" y="47">wrist_flex</text>
+<circle class="c-blue" cx="58" cy="237" r="5"/><text class="th" x="70" y="242">shoulder_pan</text>
+<circle class="c-coral" cx="261" cy="237" r="5"/><text class="th" x="273" y="242">wrist_roll</text>
+<circle class="c-pink" cx="464" cy="237" r="5"/><text class="th" x="476" y="242">gripper</text>
+<g fill="none" stroke="#888780" stroke-width="1" stroke-dasharray="4 3">
+<path d="M137 130 L137 62"/><path d="M325 100 L325 58"/><path d="M535 100 L535 60"/>
+<path d="M137 325 L137 262"/><circle cx="340" cy="300" r="32"/><path d="M300 300 L380 300"/>
+</g>
+<g fill="none" stroke="#5F5E5A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<path d="M137 130 L174 77"/>
+<path d="M325 145 L325 100 L363 68"/>
+<path d="M535 145 L535 100 L555 65"/>
+<path d="M137 325 L102 283"/>
+<path d="M307 315 L373 285"/>
+<path d="M515 325 L572 272 M515 325 L575 318"/>
+</g>
+<g fill="none" stroke-width="2">
+<path d="M137 100 A30 30 0 0 1 154 105" stroke="#1D9E75"/>
+<path d="M325 78 A22 22 0 0 1 342 86" stroke="#BA7517"/>
+<path d="M535 78 A22 22 0 0 1 546 81" stroke="#7F77DD"/>
+<path d="M137 297 A28 28 0 0 0 119 304" stroke="#378ADD"/>
+<path d="M360 300 A20 20 0 0 0 358 292" stroke="#D85A30"/>
+<path d="M578 276 L579 314" stroke="#D4537E" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+</g>
+<circle class="c-teal" cx="137" cy="130" r="5"/><circle class="c-amber" cx="325" cy="100" r="5"/><circle class="c-purple" cx="535" cy="100" r="5"/>
+<circle class="c-blue" cx="137" cy="325" r="5"/><circle class="c-coral" cx="307" cy="315" r="4"/><circle class="c-coral" cx="373" cy="285" r="4"/>
+<text class="ts" x="146" y="272">forward</text>
+<text class="ts" x="137" y="165" text-anchor="middle">upper arm vs vertical</text><text class="ts" x="137" y="183" text-anchor="middle">0° = straight up</text>
+<text class="ts" x="340" y="165" text-anchor="middle">forearm vs upper arm</text><text class="ts" x="340" y="183" text-anchor="middle">0° = arm straight</text>
+<text class="ts" x="543" y="165" text-anchor="middle">hand vs forearm, signed</text><text class="ts" x="543" y="183" text-anchor="middle">0° = hand in line</text>
+<text class="ts" x="137" y="360" text-anchor="middle">arm heading, top view</text><text class="ts" x="137" y="378" text-anchor="middle">held when arm is vertical</text>
+<text class="ts" x="340" y="360" text-anchor="middle">knuckle line tilt</text><text class="ts" x="340" y="378" text-anchor="middle">0° = palm to camera</text>
+<text class="ts" x="543" y="360" text-anchor="middle">tip gap ÷ hand size</text><text class="ts" x="543" y="378" text-anchor="middle">pinch closes the jaws</text>
+</svg>
