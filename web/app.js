@@ -131,7 +131,7 @@ function frame(now) {
   if (S.ref?.lazy && fs) for (const k in S.ref.lazy) if (Number.isFinite(fs[k])) { S.ref.humanZero[k] = fs[k]; delete S.ref.lazy[k] }
   // Which way the tracked arm reaches out on the (mirrored) screen: the twin is viewed from that side.
   const fr = r && framing(r, w, h);
-  const person = r && { arm: r.arm, core: r.conf.lift >= 0.35 && r.conf.elbow >= 0.35, straight: Math.abs(r.f.lift) < 25 && Math.abs(r.f.elbow) < 30, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
+  const person = r && { arm: r.arm, core: r.conf.lift >= 0.6 && r.conf.elbow >= 0.6, straight: Math.abs(r.f.lift) < 25 && Math.abs(r.f.elbow) < 30, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
   const out = M.tick({ now, live: live(), engaged: S.engaged, robotReady: !live() || S.mode === "idle", person });
   const fromHold = out.actions.includes("reset");   // HOLD → MIRRORING: welcome back, blend in gently
   for (const a of out.actions) act(a, fs, now, fromHold);
@@ -277,7 +277,7 @@ addEventListener("keydown", e => {
   if (e.repeat) return;
   unlockAudio();
   if (e.key === "Escape") { const o = M.stop(performance.now()); o.actions.forEach(a => act(a)); voice.say(o.say) }
-  else if (e.key === "r" || e.key === "R") { send({ type: "engage", on: false }); M = createMirror(); filt.reset() }
+  else if (e.key === "r" || e.key === "R") { send({ type: "engage", on: false }); send({ type: "home" }); M = createMirror(); filt.reset() }
   else if (e.key === "m" || e.key === "M") { voice.muted = !voice.muted; pills() }
   else if ((e.key === "g" || e.key === "G") && commands.start()) chat("Listening…");
 });
@@ -310,8 +310,9 @@ function bars() {
 
 // ---------- digital twin ----------
 function makeTwin(el) {
-  const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  r.setPixelRatio(devicePixelRatio); el.appendChild(r.domElement);
+  // Keep the twin cheap: the STL meshes are heavy and share the GPU with MediaPipe, and a slow tab means jittery tracking.
+  const r = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+  r.setPixelRatio(1); el.appendChild(r.domElement);
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(38, 1, 0.01, 10);
   cam.position.set(0, 0.2, -0.8);
   let viewSide = 1;

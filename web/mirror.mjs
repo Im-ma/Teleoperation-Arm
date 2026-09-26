@@ -31,6 +31,9 @@ export function createMirror() {
 
       switch (state) {
         case "BOOT":
+          if (!since) { since = now; out.actions.push("home") }   // every page load starts from the saved start pose
+          if (o.robotReady && now - since > 600) go("WAITING");
+          break;
         case "HOMING":
           if (o.robotReady && now - since > 600) go("WAITING");
           break;
