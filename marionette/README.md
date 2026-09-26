@@ -2,6 +2,8 @@
 
 Your whole arm is the leader arm. The browser tracks your shoulder, elbow, wrist and fingers with the webcam, and a small Python bridge drives the SO-101 follower through LeRobot — the same `send_action()` call a physical leader arm uses.
 
+**What kind of project is this?** Computer vision first, robotics second: vision-based teleoperation. The camera does markerless motion capture (MediaPipe pose + hand estimation), we turn the tracked joints into angles, then retarget those angles onto the robot's joints. No sensors on your body, no leader arm.
+
 ```
 browser (camera + MediaPipe + 3D twin) ──WebSocket──▶ bridge.py ──LeRobot──▶ SO-101 follower
 ```
