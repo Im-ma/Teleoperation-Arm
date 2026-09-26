@@ -1,39 +1,95 @@
-"""Marionette bridge: serves the web app and drives the SO-101 follower from browser pose targets.
+"""One process: website + camera tracking + the one SO-101 arm.
 
-  python bridge.py            # then open http://localhost:8000
+  python serve.py
+  python serve.py --port COM3 --id my_arm
 
-The arm connects on its own when plugged in, glides to the ready pose, and waits.
-Engaging eases from the robot's pose onto yours, so nothing jumps.
+Open http://localhost:8000 — the page tracks your arm and this process drives the robot.
 """
-import asyncio, json, os, secrets, time
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+import os
+import secrets
+import sys
+import time
+import webbrowser
 from pathlib import Path
 
+import _bootstrap  # noqa: F401
 import numpy as np
-from aiohttp import web, WSMsgType
+from aiohttp import WSMsgType, web
 
-HERE = Path(__file__).parent
-CALIB = Path.home() / ".cache/huggingface/lerobot/calibration/robots/so_follower/follower.json"
+from so101_teleop.constants import CALIBRATION_DIR
+from so101_teleop.pose_mapping import JOINTS, limits_from_calibration
+
+HERE = Path(__file__).resolve().parent
+WEB_DIR = HERE / "web"
+MODEL_DIR = HERE / "models"
 POSES = HERE / "poses.json"
-PORT_GLOB = "tty.usbmodem*"
-JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
+KEY_FILE = HERE / ".key"
 HZ = 30
-MAX_STEP = 4.0    # degrees per tick while you drive, about 120 deg/s
-HOME_STEP = 1.5   # degrees per tick for automatic moves, about 45 deg/s
-BLEND_S = 1.5     # seconds to ease from the robot's pose onto yours after engaging
+MAX_STEP = 4.0
+HOME_STEP = 1.5
+BLEND_S = 1.5
 TEST_DELTA = 12.0
-READY_DEFAULT = {**{j: 0.0 for j in JOINTS}, "gripper": 10.0}   # 0 = middle of each calibrated range
+READY_DEFAULT = {**{j: 0.0 for j in JOINTS}, "gripper": 10.0}
 
 
-def limits():
-    out = {"gripper": [0.0, 100.0]}
-    if CALIB.exists():
-        for j, v in json.loads(CALIB.read_text()).items():
-            if j == "gripper":
-                continue
-            half = (v["range_max"] - v["range_min"]) / 2 * 360 / 4095
-            half = min(half, 150) if j == "wrist_roll" else half   # stay off the encoder wrap point at ±180
-            out[j] = [-half + 3, half - 3]
-    return out
+def list_ports() -> list[str]:
+    if sys.platform == "win32":
+        from serial.tools.list_ports import comports
+
+        ranked = []
+        for port in comports():
+            blob = f"{port.description} {port.hwid}".upper()
+            score = int(any(tag in blob for tag in ("USB", "SERIAL", "CH340", "CP210", "FTDI", "MODEM")))
+            ranked.append((score, port.device, port.description))
+        ranked.sort(reverse=True)
+        return [device for _, device, _ in ranked]
+    found = []
+    for pattern in ("tty.usbmodem*", "ttyACM*", "ttyUSB*"):
+        found.extend(sorted(Path("/dev").glob(pattern)))
+    return [str(path) for path in found]
+
+
+def describe_ports() -> str:
+    if sys.platform != "win32":
+        return ", ".join(list_ports()) or "none"
+    from serial.tools.list_ports import comports
+
+    return ", ".join(f"{p.device} ({p.description})" for p in comports()) or "none"
+
+
+def find_calibration(robot_id: str) -> tuple[str, Path]:
+    folders = [
+        CALIBRATION_DIR / "robots" / "so_follower",
+        Path.home() / ".cache/huggingface/lerobot/calibration/robots/so_follower",
+    ]
+    wanted = [robot_id, "my_arm", "my_follower", "follower"]
+    for folder in folders:
+        for name in wanted:
+            if (folder / f"{name}.json").is_file():
+                return name, folder
+    for folder in folders:
+        if folder.is_dir():
+            files = sorted(folder.glob("*.json"))
+            if files:
+                return files[0].stem, folder
+    return robot_id, folders[0]
+
+
+def limits(robot=None):
+    calibration = getattr(robot, "calibration", None) if robot is not None else None
+    if not calibration:
+        _id, folder = find_calibration("my_arm")
+        path = folder / f"{_id}.json"
+        if path.exists():
+            calibration = json.loads(path.read_text())
+    mapped = limits_from_calibration(calibration)
+    return {joint: [lo, hi] for joint, (lo, hi) in mapped.items()}
 
 
 def load_ready():
@@ -43,14 +99,13 @@ def load_ready():
         return dict(READY_DEFAULT)
 
 
-def ports():
-    return sorted(Path("/dev").glob(PORT_GLOB))
-
-
 class Bridge:
-    def __init__(self):
+    def __init__(self, port: str | None = None, robot_id: str = "my_arm", connect_robot: bool = True):
+        self.preferred_port = port
+        self.requested_id = robot_id
+        self.connect_robot = connect_robot
         self.robot, self.state, self.msg = None, "sim", "No arm connected. The twin still follows you."
-        self.mode = "idle"   # idle | homing | engaged | testing | limp
+        self.mode = "idle"
         self.target, self.cmd, self.obs, self.goal, self.hold = {}, {}, {}, {}, {}
         self.blend, self.errors, self.clients, self.task, self.seen = 0.0, 0, set(), None, False
         self.lock = asyncio.Lock()
@@ -64,8 +119,18 @@ class Bridge:
                 self.clients.discard(ws)
 
     def status(self):
-        return {"type": "status", "robot": self.state, "msg": self.msg, "mode": self.mode,
-                "engaged": self.mode == "engaged", "limits": self.lim, "ready": self.ready}
+        cal_id = str(getattr(self.robot, "calibration_fpath", "") or "") if self.robot else None
+        return {
+            "type": "status",
+            "robot": self.state,
+            "msg": self.msg,
+            "mode": self.mode,
+            "engaged": self.mode == "engaged",
+            "limits": self.lim,
+            "ready": self.ready,
+            "calibration_id": cal_id,
+            "ports": list_ports(),
+        }
 
     async def say(self, msg, mode=None):
         self.msg, self.mode = msg, mode or self.mode
@@ -74,9 +139,9 @@ class Bridge:
     def clip(self, pose):
         return {j: float(np.clip(v, *self.lim.get(j, (-180, 180)))) for j, v in pose.items() if j in JOINTS}
 
-    async def io(self, fn, *a):
+    async def io(self, fn, *a, **kw):
         async with self.lock:
-            return await asyncio.to_thread(fn, *a)
+            return await asyncio.to_thread(fn, *a, **kw)
 
     async def read(self):
         o = await self.io(self.robot.get_observation)
@@ -91,31 +156,56 @@ class Bridge:
         if self.task and not self.task.done():
             self.task.cancel()
 
-    # ---------- connection ----------
+    def _candidate_ports(self) -> list[str]:
+        if self.preferred_port:
+            return [self.preferred_port]
+        return list_ports()
+
     async def connect(self):
         if self.robot:
             return
-        found = ports()
+        found = self._candidate_ports()
         if not found:
-            return await self.say("No arm found on USB. Plug in the arm (USB and power).")
+            return await self.say(
+                f"No arm on USB. Ports seen: {describe_ports()}. "
+                "Plug in the arm (USB + power) or pass --port COM3."
+            )
         self.state = "connecting"
-        await self.say(f"Connecting on {found[0].name}…")
+        await self.say(f"Connecting on {found[0]}…")
         try:
-            from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
-            r = SO101Follower(SO101FollowerConfig(port=str(found[0]), id="follower", disable_torque_on_disconnect=False))
-            for attempt in range(3):   # the startup ping sometimes misses a motor
+            from so101_teleop.robots.config_so_follower import SO101FollowerConfig
+            from so101_teleop.robots.so_follower import SO101Follower
+
+            robot_id, cal_dir = find_calibration(self.requested_id)
+            r = SO101Follower(
+                SO101FollowerConfig(
+                    port=found[0],
+                    id=robot_id,
+                    calibration_dir=cal_dir,
+                    disable_torque_on_disconnect=False,
+                )
+            )
+            last_error = None
+            for attempt in range(3):
                 try:
-                    await asyncio.to_thread(r.connect)
+                    await asyncio.to_thread(r.connect, False)
+                    last_error = None
                     break
-                except Exception:
-                    if attempt == 2:
-                        raise
+                except Exception as exc:
+                    last_error = exc
                     try:
                         r.bus.port_handler.closePort()
                     except Exception:
                         pass
                     await asyncio.sleep(0.5)
-            self.robot, self.lim, self.state = r, limits(), "live"
+            if last_error is not None:
+                raise last_error
+            if not r.calibration:
+                onboard = await asyncio.to_thread(r.bus.read_calibration)
+                r.calibration = onboard
+                r.bus.calibration = onboard
+                await asyncio.to_thread(r._save_calibration)
+            self.robot, self.lim, self.state = r, limits(r), "live"
             self.cmd = dict(await self.read())
             self.run(self.home())
         except Exception as e:
@@ -133,14 +223,12 @@ class Bridge:
                 pass
         await self.send_all(self.status())
 
-    # ---------- automatic moves ----------
     async def move_to(self, goal, timeout=12):
-        """Glide to goal at homing speed, then return how far each joint ended up from it."""
         self.goal = self.clip(goal)
         t0 = time.monotonic()
         while time.monotonic() - t0 < timeout and any(abs(self.cmd.get(j, 1e9) - v) > 0.01 for j, v in self.goal.items()):
             await asyncio.sleep(0.1)
-        await asyncio.sleep(0.7)   # settle, and let a fresh reading arrive
+        await asyncio.sleep(0.7)
         return {j: self.obs[j] - v for j, v in self.goal.items() if j in self.obs}
 
     async def home(self):
@@ -172,7 +260,7 @@ class Bridge:
         if on:
             await self.io(self.robot.bus.disable_torque)
             return await self.say("Limp: move the arm by hand, then save it as the ready pose.", "limp")
-        self.cmd = dict(await self.read())   # hold exactly where the hands left it
+        self.cmd = dict(await self.read())
         await self.io(self.robot.send_action, {f"{j}.pos": v for j, v in self.cmd.items()})
         await self.io(self.robot.bus.enable_torque)
         await self.say("Holding.", "idle")
@@ -182,15 +270,14 @@ class Bridge:
         POSES.write_text(json.dumps({"ready": self.ready}, indent=2))
         await self.say("Saved as the ready pose.")
 
-    # ---------- 30 Hz control loop ----------
     async def loop(self):
         tick = 0
         while True:
             await asyncio.sleep(1 / HZ)
             tick += 1
             if not self.robot:
-                if tick % (2 * HZ) == 0:   # plug-and-go: connect when the arm appears
-                    present = bool(ports())
+                if self.connect_robot and tick % (2 * HZ) == 0:
+                    present = bool(self._candidate_ports())
                     if present and not self.seen:
                         await self.connect()
                     self.seen = present
@@ -202,7 +289,7 @@ class Bridge:
                 goal, step = None, HOME_STEP
                 if self.mode == "engaged" and self.target:
                     self.blend = min(1.0, self.blend + 1 / (BLEND_S * HZ))
-                    a = self.blend * self.blend * (3 - 2 * self.blend)   # smoothstep
+                    a = self.blend * self.blend * (3 - 2 * self.blend)
                     goal = {j: self.hold.get(j, t) + a * (t - self.hold.get(j, t)) for j, t in self.clip(self.target).items()}
                     step = MAX_STEP
                 elif self.mode in ("homing", "testing"):
@@ -216,24 +303,26 @@ class Bridge:
                 self.errors = 0
             except Exception as e:
                 self.errors += 1
-                if "not configured" in str(e) or not ports():
+                if "not configured" in str(e) or not list_ports():
                     await self.drop("Arm disconnected from USB. Check the cable; it reconnects on its own.")
                 elif self.errors > 15:
                     await self.drop(f"Too many bus errors ({e}). Check power and motor cables.")
 
 
 B = Bridge()
+KEY = ""
 
 
 async def handle(d):
-    """One command, from the web app (WebSocket) or the HTTP API."""
     t = d.get("type")
     if t == "target":
-        B.target = {j: float(v) for j, v in d["joints"].items() if j in JOINTS}
+        B.target = {j: float(v) for j, v in d.get("joints", {}).items() if j in JOINTS}
     elif t == "connect":
         await B.connect()
+    elif t == "reference" and B.robot:
+        await B.read()
     elif not B.robot:
-        await B.say("Connect the arm first.")
+        await B.say("Connect the arm first. On the robot card, press Connect, or restart with --port COM3.")
     elif t == "engage":
         if d.get("on") and B.mode == "idle":
             B.hold, B.blend = dict(B.cmd), 0.0
@@ -277,7 +366,6 @@ async def api_cmd(req):
 
 
 def from_internet(req):
-    # tunnels connect from localhost but add a forwarding header
     return req.remote not in ("127.0.0.1", "::1") or any(h in req.headers for h in ("X-Forwarded-For", "Cf-Connecting-Ip"))
 
 
@@ -291,28 +379,82 @@ async def auth(req, handler):
 
 
 async def index(_):
-    return web.FileResponse(HERE / "web/index.html", headers={"Cache-Control": "no-store"})
+    return web.FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
 
 async def start_loop(app):
+    from get_models import ensure_models
+
+    ensure_models(MODEL_DIR)
     app["loop"] = asyncio.create_task(B.loop())
-    if ports():
+    if B.connect_robot and B._candidate_ports():
         B.seen = True
         asyncio.create_task(B.connect())
 
 
-KEY_FILE = HERE / ".key"
-KEY = os.environ.get("MARIONETTE_KEY") or (KEY_FILE.read_text().strip() if KEY_FILE.exists() else "")
-if not KEY:
-    KEY = secrets.token_urlsafe(16)
-    KEY_FILE.write_text(KEY)
+def build_app() -> web.Application:
+    app = web.Application(middlewares=[auth])
+    app.add_routes(
+        [
+            web.get("/", index),
+            web.get("/ws", ws_handler),
+            web.get("/api/state", api_state),
+            web.post("/api/{cmd}", api_cmd),
+            web.static("/models", MODEL_DIR),
+            web.static("/web", WEB_DIR),
+        ]
+    )
+    app.on_startup.append(start_loop)
+    return app
 
-app = web.Application(middlewares=[auth])
-app.add_routes([web.get("/", index), web.get("/ws", ws_handler),
-                web.get("/api/state", api_state), web.post("/api/{cmd}", api_cmd),
-                web.static("/models", HERE / "models"), web.static("/web", HERE / "web")])
-app.on_startup.append(start_loop)
+
+def run(
+    follower_port: str | None = None,
+    follower_id: str = "my_arm",
+    host: str = "0.0.0.0",
+    http_port: int = 8000,
+    open_browser: bool = True,
+    connect_robot: bool = True,
+) -> None:
+    global B, KEY
+    B = Bridge(port=follower_port, robot_id=follower_id, connect_robot=connect_robot)
+    KEY = os.environ.get("MARIONETTE_KEY") or (KEY_FILE.read_text().strip() if KEY_FILE.exists() else "")
+    if not KEY:
+        KEY = secrets.token_urlsafe(16)
+        KEY_FILE.write_text(KEY)
+
+    url = f"http://127.0.0.1:{http_port}"
+    print(f"Teleop site: {url}")
+    print(f"USB ports: {describe_ports()}")
+    if follower_port:
+        print(f"Arm port: {follower_port}  id: {follower_id}")
+    elif connect_robot:
+        print("No --port given; will use the first USB serial port it finds.")
+    else:
+        print("Robot connect is off (dry run). The 3D twin still follows the camera.")
+    if open_browser:
+        webbrowser.open(url)
+    web.run_app(build_app(), host=host, port=http_port, print=None)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="SO-101 camera teleop: website + the one arm.")
+    parser.add_argument("--port", "--follower-port", dest="follower_port", help="Arm COM/tty port, e.g. COM3")
+    parser.add_argument("--id", "--follower-id", dest="follower_id", default="my_arm")
+    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--http-port", type=int, default=8000)
+    parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="Serve the site without opening the arm.")
+    args = parser.parse_args()
+    run(
+        follower_port=args.follower_port,
+        follower_id=args.follower_id,
+        host=args.host,
+        http_port=args.http_port,
+        open_browser=not args.no_browser,
+        connect_robot=not args.dry_run,
+    )
+
 
 if __name__ == "__main__":
-    print("Marionette on http://localhost:8000   (remote access key is in so101/.key)")
-    web.run_app(app, host="0.0.0.0", port=8000, print=None)
+    main()

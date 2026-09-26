@@ -4,7 +4,6 @@ import logging
 import time
 from functools import cached_property
 
-from so101_teleop.cameras import DepthCamera, make_cameras_from_configs
 from so101_teleop.decorators import check_if_already_connected, check_if_not_connected
 from so101_teleop.motors import Motor, MotorCalibration, MotorNormMode
 from so101_teleop.motors.feetech import FeetechMotorsBus, OperatingMode
@@ -60,25 +59,14 @@ class SOFollower(Robot):
             },
             calibration=self.calibration,
         )
-        self.cameras = make_cameras_from_configs(config.cameras)
 
     @property
     def _motors_ft(self) -> dict[str, type]:
         return {f"{motor}.pos": float for motor in self.bus.motors}
 
-    @property
-    def _cameras_ft(self) -> dict[str, tuple]:
-        features: dict[str, tuple] = {}
-        for cam_key, cam in self.cameras.items():
-            if getattr(cam, "use_rgb", True):
-                features[cam_key] = (cam.height, cam.width, 3)
-            if isinstance(cam, DepthCamera) and cam.use_depth:
-                features[f"{cam_key}_depth"] = (cam.height, cam.width, 1)
-        return features
-
     @cached_property
     def observation_features(self) -> dict[str, type | tuple]:
-        return {**self._motors_ft, **self._cameras_ft}
+        return self._motors_ft
 
     @cached_property
     def action_features(self) -> dict[str, type]:
@@ -86,7 +74,7 @@ class SOFollower(Robot):
 
     @property
     def is_connected(self) -> bool:
-        return self.bus.is_connected and all(cam.is_connected for cam in self.cameras.values())
+        return self.bus.is_connected
 
     @check_if_already_connected
     def connect(self, calibrate: bool = True) -> None:
@@ -96,9 +84,6 @@ class SOFollower(Robot):
                 "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
             )
             self.calibrate()
-
-        for cam in self.cameras.values():
-            cam.connect()
 
         self.configure()
         logger.info(f"{self} connected.")
@@ -178,20 +163,6 @@ class SOFollower(Robot):
         obs_dict = {f"{motor}.pos": val for motor, val in obs_dict.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
-
-        for cam_key, cam in self.cameras.items():
-            if getattr(cam, "use_rgb", True):
-                start = time.perf_counter()
-                obs_dict[cam_key] = cam.read_latest()
-                dt_ms = (time.perf_counter() - start) * 1e3
-                logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
-
-            if isinstance(cam, DepthCamera) and cam.use_depth:
-                start = time.perf_counter()
-                obs_dict[f"{cam_key}_depth"] = cam.read_latest_depth()
-                dt_ms = (time.perf_counter() - start) * 1e3
-                logger.debug(f"{self} read {cam_key} depth: {dt_ms:.1f}ms")
-
         return obs_dict
 
     @check_if_not_connected
@@ -209,10 +180,7 @@ class SOFollower(Robot):
     @check_if_not_connected
     def disconnect(self):
         self.bus.disconnect(self.config.disable_torque_on_disconnect)
-        for cam in self.cameras.values():
-            cam.disconnect()
         logger.info(f"{self} disconnected.")
 
 
-SO100Follower = SOFollower
 SO101Follower = SOFollower

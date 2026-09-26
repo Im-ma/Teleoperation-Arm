@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 
 ROBOTS = "robots"
-TELEOPERATORS = "teleoperators"
 
 # Calibration lives inside this kit so the folder is portable.
 # Override with SO101_CALIBRATION if you want it somewhere else.

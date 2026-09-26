@@ -1,9 +1,8 @@
-"""Find the USB/COM port of one SO-101 arm. Unplug when prompted."""
+"""Show the COM/tty port of the one SO-101 arm."""
 
 from __future__ import annotations
 
 import platform
-import time
 from pathlib import Path
 
 import _bootstrap  # noqa: F401
@@ -21,22 +20,25 @@ def find_available_ports() -> list[str]:
 
 
 def main() -> None:
-    print("Finding all available ports for the MotorsBus.")
-    ports_before = find_available_ports()
-    print("Ports before disconnecting:", ports_before)
-
-    input("Unplug the USB cable from ONE arm, then press Enter.")
-    time.sleep(0.5)
-    ports_after = find_available_ports()
-    ports_diff = list(set(ports_before) - set(ports_after))
-
-    if len(ports_diff) == 1:
-        print(f"The port of this arm is '{ports_diff[0]}'")
-        print("Plug the USB cable back in.")
+    if platform.system() == "Windows":
+        found = [(p.device, p.description) for p in list_ports.comports()]
+        if not found:
+            raise SystemExit("No COM ports found. Plug in the arm (USB and power), then run this again.")
+        print("Connected serial ports:")
+        for device, description in found:
+            print(f"  {device}  {description}")
+        if len(found) == 1:
+            print(f"\nUse this port: {found[0][0]}")
         return
-    if not ports_diff:
-        raise OSError("Could not detect the port. No difference was found. Unplug only one USB cable.")
-    raise OSError(f"Could not detect the port. More than one port disappeared: {ports_diff}")
+
+    ports = find_available_ports()
+    if not ports:
+        raise SystemExit("No serial ports found. Plug in the arm (USB and power), then run this again.")
+    print("Connected serial ports:")
+    for port in ports:
+        print(f"  {port}")
+    if len(ports) == 1:
+        print(f"\nUse this port: {ports[0]}")
 
 
 if __name__ == "__main__":

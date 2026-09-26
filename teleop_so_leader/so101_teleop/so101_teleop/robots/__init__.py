@@ -1,11 +1,4 @@
-from .config_so_follower import SO100FollowerConfig, SO101FollowerConfig, SOFollowerRobotConfig
-from .so_follower import SO100Follower, SO101Follower, SOFollower
+from .config_so_follower import SO101FollowerConfig
+from .so_follower import SO101Follower
 
-__all__ = [
-    "SO100Follower",
-    "SO100FollowerConfig",
-    "SO101Follower",
-    "SO101FollowerConfig",
-    "SOFollower",
-    "SOFollowerRobotConfig",
-]
+__all__ = ["SO101Follower", "SO101FollowerConfig"]

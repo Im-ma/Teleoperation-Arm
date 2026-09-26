@@ -8,7 +8,6 @@ __pycache__/
 .vscode/
 *.log
 
-# marionette
-marionette/models/
-marionette/.key
-marionette/poses.json
+teleop_so_leader/so101_teleop/models/
+teleop_so_leader/so101_teleop/.key
+teleop_so_leader/so101_teleop/poses.json

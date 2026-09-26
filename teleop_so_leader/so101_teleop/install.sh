@@ -24,4 +24,4 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 echo
 echo "Setup finished. Activate with: source .venv/bin/activate"
-echo "Then follow SETUP.md starting at \"Find USB ports\"."
+echo "Then: python teleoperate.py --port COM3 --id my_arm"
