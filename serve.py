@@ -37,6 +37,7 @@ POSES = HERE / "poses.json"
 KEY_FILE = HERE / ".key"
 HZ = 30
 MAX_STEP = 4.0
+EASE = 0.35  # fraction of the remaining distance closed per tick while mirroring
 HOME_STEP = 1.5
 BLEND_S = 1.5
 TEST_DELTA = 12.0
@@ -321,7 +322,10 @@ class Bridge:
                     for j, t in goal.items():
                         s = step * (3 if j == "gripper" else 1)
                         c = self.cmd.get(j, self.obs.get(j, t))
-                        self.cmd[j] = c + float(np.clip(t - c, -s, s))
+                        # Ease toward the goal (about 0.1 s time constant) under the per-tick speed cap, so
+                        # targets that arrive at an uneven camera rate never turn into stop-and-go steps.
+                        pull = EASE * (t - c) if step == MAX_STEP else t - c
+                        self.cmd[j] = c + float(np.clip(pull, -s, s))
                     await self.io(self.robot.send_action, {f"{j}.pos": v for j, v in self.cmd.items() if j in JOINTS})
                 self.errors = 0
             except Exception as e:

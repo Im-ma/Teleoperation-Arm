@@ -2,7 +2,10 @@
 // Capture both poses together, then apply degree changes about that reference.
 export const JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"];
 export const FEATURES = { shoulder_pan: "pan", shoulder_lift: "lift", elbow_flex: "elbow", wrist_flex: "wrist", wrist_roll: "roll" };
-export const DEFAULT_SIGN = { shoulder_pan: 1, shoulder_lift: 1, elbow_flex: 1, wrist_flex: 1, wrist_roll: 1 };   // verified live on the real arm
+// From the URDF at the stretched start pose: +lift, +elbow and +wrist_flex all move the gripper DOWN,
+// while the human angles are + when the arm/hand goes UP. The elbow keeps +1 because the robot's elbow
+// sits at its end stop when stretched and can only fold one way (down): a bend maps to a bend.
+export const DEFAULT_SIGN = { shoulder_pan: 1, shoulder_lift: -1, elbow_flex: 1, wrist_flex: -1, wrist_roll: 1 };
 export const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 export const wrap = d => ((d + 180) % 360 + 360) % 360 - 180;
 export const circular = k => ["pan", "wrist", "roll"].includes(k);
@@ -48,6 +51,7 @@ export function mapMatchedPose(features, reference, limits, flip = {}) {
     if (!range || !range.every(finite) || range[0] >= range[1]) continue;
     let delta = features[feature] - reference.humanZero[feature];
     if (circular(feature)) delta = wrap(delta);
+    if (joint === "elbow_flex") delta = Math.abs(delta);   // the robot's elbow folds one way only: any bend is a fold
     const direction = DEFAULT_SIGN[joint] * (flip[joint] ? -1 : 1);
     out[joint] = clamp(reference.robotZero[joint] + direction * delta, ...range);
   }

@@ -74,11 +74,14 @@ export function armFeatures(L, W, hands, arm, w, h) {
   conf.elbow = len(fore) > 0.2 * F.sw ? Math.min(conf.lift, vis(wr)) : 0;
   const { pan, yaw } = panAngle(W, arm);
   f.pan = pan; conf.pan = pan === undefined || yaw > 25 ? 0 : conf.lift;
-  // the hand whose wrist sits on this arm's wrist
-  let H = null, Hw = null, best = 0.12;
+  // the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,
+  // and within a third of a shoulder width (so a stray hand across the body is never taken)
+  const ow = SIDE[arm === "right" ? "left" : "right"][2];
+  let H = null, Hw = null, best = 0.35 * F.sw;
   (hands?.landmarks || []).forEach((hl, i) => {
-    const d = Math.hypot(hl[0].x - L[wr].x, hl[0].y - L[wr].y);
-    if (d < best) { best = d; H = hl; Hw = hands.worldLandmarks?.[i] }
+    const hx = hl[0].x * w, hy = hl[0].y * h;
+    const d = Math.hypot(hx - L[wr].x * w, hy - L[wr].y * h), dOther = Math.hypot(hx - L[ow].x * w, hy - L[ow].y * h);
+    if (d < best && d < dOther) { best = d; H = hl; Hw = hands.worldLandmarks?.[i] }
   });
   if (H) {
     const hf = handFeatures(H, Hw, F, fore, w, h);

@@ -18,7 +18,7 @@ export class OneEuro {
 
 // Per-feature settings: [minCutoff Hz, beta, dead zone, is an angle]
 const CFG = {
-  lift: [1.2, 0.03, 0, true], elbow: [1.2, 0.03, 0, true], wrist: [1.2, 0.03, 0, true],
+  lift: [0.6, 0.015, 0, true], elbow: [0.6, 0.015, 0, true], wrist: [0.6, 0.015, 0, true],
   roll: [1.0, 0.02, 0, true], pan: [0.5, 0.01, 5, true], grip: [2.0, 0.5, 0, false],
 };
 const JUMP = 50;          // degrees in one frame = a tracking glitch, not a real move
