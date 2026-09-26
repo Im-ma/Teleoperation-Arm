@@ -130,9 +130,8 @@ function frame(now) {
   // Hand not seen yet at lock: take its zero from the first good reading instead of a guess.
   if (S.ref?.lazy && fs) for (const k in S.ref.lazy) if (Number.isFinite(fs[k])) { S.ref.humanZero[k] = fs[k]; delete S.ref.lazy[k] }
   // Which way the tracked arm reaches out on the (mirrored) screen: the twin is viewed from that side.
-  if (r) S.side = r.F.x[0] > 0 ? -1 : 1;
   const fr = r && framing(r, w, h);
-  const person = r && { arm: r.arm, core: r.conf.lift >= 0.35 && r.conf.elbow >= 0.35, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
+  const person = r && { arm: r.arm, core: r.conf.lift >= 0.35 && r.conf.elbow >= 0.35, straight: Math.abs(r.f.lift) < 25 && Math.abs(r.f.elbow) < 30, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
   const out = M.tick({ now, live: live(), engaged: S.engaged, robotReady: !live() || S.mode === "idle", person });
   const fromHold = out.actions.includes("reset");   // HOLD → MIRRORING: welcome back, blend in gently
   for (const a of out.actions) act(a, fs, now, fromHold);
@@ -154,16 +153,16 @@ function act(a, fs, now, fromHold) {
     S.ref = {
       version: 1, arm: M.arm, physical: live(), robotZero: { ...robotZero() }, pinch: 0.12,
       lazy: Object.fromEntries(["wrist", "roll"].filter(k => med(k) === undefined).map(k => [k, 1])),
-      humanZero: { ...GOALPOST, wrist: med("wrist") ?? 90, roll: med("roll") ?? 0, grip: Math.max(0.35, med("grip") ?? 0.8) },
+      humanZero: { lift: med("lift") ?? 0, elbow: med("elbow") ?? 0, pan: 0, wrist: med("wrist") ?? 90, roll: med("roll") ?? 0, grip: Math.max(0.35, med("grip") ?? 0.8) },
     };
     S.target = { ...S.ref.robotZero };
   } else if (a === "engage") {
-    if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), ...syncPose(fs, limits()) };
+    if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), shoulder_pan: S.ref.robotZero.shoulder_pan, wrist_roll: S.ref.robotZero.wrist_roll };
     send({ type: "target", joints: finiteJoints(S.target) });
     // Re-engaging after HOLD can find the person's arm well away from where they left off; blend in slower.
     send({ type: "engage", on: true, blend_s: fromHold ? 2.5 : 1.5 });
   } else if (a === "send" && fs && S.ref) {
-    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), ...syncPose(fs, limits()) };
+    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), shoulder_pan: S.ref.robotZero.shoulder_pan, wrist_roll: S.ref.robotZero.wrist_roll };
     if (now - lastSend > 33) { send({ type: "target", joints: finiteJoints(S.target) }); lastSend = now }
   } else if (a === "disengage") send({ type: "engage", on: false });
   else if (a === "home") send({ type: "home" });
@@ -233,7 +232,7 @@ const STATE_TEXT = {
   WAITING: ["waiting", "Step up and copy me."], ACQUIRING: ["your turn", ""],
   MIRRORING: ["live · mirroring you", "I'm your arm now."], HOLD: ["holding", LINES.lost],
 };
-const HINT_TEXT = { ...LINES, strike: "Copy the pose: arm out, forearm up.", hold: "Hold it…" };
+const HINT_TEXT = { ...LINES, strike: "Stretch your right arm straight out, like the robot.", hold: "Hold it…" };
 function caption(out, fr) {
   const [small, big] = STATE_TEXT[out.state];
   const text = (out.hint && HINT_TEXT[out.hint]) || big;
