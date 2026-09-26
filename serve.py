@@ -224,7 +224,7 @@ class Bridge:
     async def drop(self, why):
         self.stop_task()
         r, self.robot = self.robot, None
-        self.state, self.mode, self.msg = "error", "idle", why
+        self.state, self.mode, self.msg, self.seen = "error", "idle", why, False
         if r:
             try:
                 await asyncio.to_thread(r.disconnect)
