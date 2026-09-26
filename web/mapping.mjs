@@ -2,7 +2,7 @@
 // Capture both poses together, then apply degree changes about that reference.
 export const JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"];
 export const FEATURES = { shoulder_pan: "pan", shoulder_lift: "lift", elbow_flex: "elbow", wrist_flex: "wrist", wrist_roll: "roll" };
-export const DEFAULT_SIGN = { shoulder_pan: 1, shoulder_lift: -1, elbow_flex: -1, wrist_flex: -1, wrist_roll: 1 };   // twin seen with the arm pointing screen-left: raising your arm lowers the joint angle
+export const DEFAULT_SIGN = { shoulder_pan: 1, shoulder_lift: 1, elbow_flex: 1, wrist_flex: 1, wrist_roll: 1 };   // verified live on the real arm
 export const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 export const wrap = d => ((d + 180) % 360 + 360) % 360 - 180;
 export const circular = k => ["pan", "wrist", "roll"].includes(k);

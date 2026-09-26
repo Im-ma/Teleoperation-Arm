@@ -327,7 +327,7 @@ function makeTwin(el) {
     requestAnimationFrame(tick);
     const w = el.clientWidth, h = el.clientHeight;
     if (r.domElement.width !== Math.round(w * devicePixelRatio)) { r.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix() }
-    const side = S.side ?? 1;
+    const side = -1;   // twin points the same way as your arm on the mirrored screen
     if (side !== viewSide) { viewSide = side; cam.position.set(0, 0.2, -0.8 * side); dl.position.set(1, 2, -1.2 * side) }
     const measured = live() && S.obs.shoulder_pan !== undefined;
     const src = measured ? S.obs : S.target;
