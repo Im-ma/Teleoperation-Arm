@@ -15,6 +15,7 @@ const scale = (a, k) => a.map(v => v * k);
 const unit = a => scale(a, 1 / (len(a) || 1));
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 const v3 = p => [p.x, p.y, p.z];
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 export function bodyFrame(L, arm, w, h) {
   const [s, , , o] = SIDE[arm];
@@ -42,6 +43,19 @@ export function panAngle(W, arm) {
   const yaw = Math.abs(Math.atan2(sz, Math.abs(sx))) * D;
   const horiz = Math.hypot(u[0], u[2]) / (len(u) || 1);
   return { yaw, pan: horiz > 0.3 ? Math.atan2(u[0] * fx + u[2] * fz, u[0] * sx + u[2] * sz) * D : undefined };
+}
+
+// Hand position from MediaPipe's 3D world landmarks: elevation above horizontal, reach (1 = arm straight)
+// and depth (share of the shoulder-to-wrist line pointing toward or away from the camera).
+export function reach3D(W, side) {
+  const [s, e, wr] = SIDE[side];
+  if (![0, 11, 12, s, e, wr].every(i => W?.[i])) return null;
+  const S = v3(W[s]), hv = sub(v3(W[wr]), S), n = len(hv);
+  const arm = len(sub(v3(W[e]), S)) + len(sub(v3(W[wr]), v3(W[e])));
+  if (n < 1e-3 || arm < 1e-3) return null;
+  const mid = scale([W[11].x + W[12].x, W[11].y + W[12].y, W[11].z + W[12].z], 0.5);
+  const up = dot(sub(v3(W[0]), mid), [0, -1, 0]) >= 0 ? [0, -1, 0] : [0, 1, 0];   // toward the head
+  return { ang: Math.asin(clamp(dot(hv, up) / n, -1, 1)) * D, reach: n / arm, depth: Math.abs(hv[2]) / n };
 }
 
 // Wrist bend, roll about the hand's own axis (3D hand landmarks) and grip opening.
@@ -86,6 +100,21 @@ export function armFeatures(L, W, hands, arm, w, h) {
   f.elbow = wrap(ang(F, fore) - f.lift);
   conf.lift = len(up) > 0.2 * F.sw ? Math.min(vis(s), vis(e)) : 0;
   conf.elbow = len(fore) > 0.2 * F.sw ? Math.min(conf.lift, vis(wr)) : 0;
+  // Where the hand is, not how the joints bend: wrist relative to shoulder in the body frame, as a
+  // direction (0 = straight out to the side, + up) and a reach (1 = arm fully extended). Reach is
+  // normalised by the arm's own length, or by 1.45 shoulder widths when the arm points at the camera.
+  const hv = sub(P(wr), P(s));
+  f.reachAng = ang(F, hv);
+  f.reach = len(hv) / Math.max(len(up) + len(fore), 1.45 * F.sw);
+  conf.reachAng = conf.reach = Math.min(vis(s), vis(e), vis(wr));
+  // Reaching toward or away from the camera, the flat image can't see the hand's height or distance (the
+  // arm looks short and its angle is noise). Blend over to the 3D landmarks as the arm leaves the picture plane.
+  const r3 = reach3D(W, side);
+  if (r3) {
+    const k = clamp((r3.depth - 0.3) / 0.4, 0, 1);
+    f.reachAng += k * wrap(r3.ang - f.reachAng);
+    f.reach += k * (r3.reach - f.reach);
+  }
   const { pan, yaw } = panAngle(W, side);
   f.pan = pan; conf.pan = pan === undefined || yaw > 25 ? 0 : conf.lift;
   // the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,

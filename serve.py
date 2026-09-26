@@ -36,14 +36,17 @@ MODEL_DIR = HERE / "models"
 POSES = HERE / "poses.json"
 KEY_FILE = HERE / ".key"
 HZ = 30
-MAX_STEP = 4.0
-EASE = 0.35  # fraction of the remaining distance closed per tick while mirroring
+MAX_STEP = 2.5  # degrees per tick while mirroring, about 75 deg/s
+EASE = 0.2  # fraction of the remaining distance closed per tick while mirroring (~0.15 s time constant)
+TARGET_MEDIAN = 5  # median of the last N page targets: a one- or two-frame tracking glitch never moves the arm
 HOME_STEP = 1.5
 BLEND_S = 1.5
 TEST_DELTA = 12.0
 GESTURE_STEP = 3.0  # degrees per tick for gestures, about 90 deg/s
 DEADMAN_S = 0.4     # no target from the page for this long: hold still
-READY_DEFAULT = {**{j: 0.0 for j in JOINTS}, "gripper": 10.0}
+# Reset pose: arm straight forward and level (upper arm, forearm and claw all horizontal, from the URDF
+# link offsets: lift = 76.03, elbow = -73.82, wrist = -5.05), claw turned 90 deg.
+READY_DEFAULT = {"shoulder_pan": 0.0, "shoulder_lift": 76.0, "elbow_flex": -73.8, "wrist_flex": -5.1, "wrist_roll": 90.0, "gripper": 10.0}
 
 
 def list_ports() -> list[str]:
@@ -217,9 +220,9 @@ class Bridge:
                 await asyncio.to_thread(r._save_calibration)
             self.robot, self.lim, self.state = r, limits(r), "live"
             self.cmd = dict(await self.read())
-            # Wherever the arm sits when the bridge connects is this session's start pose:
-            # every page load or R brings it back here. Pose by hand + Save as ready still overrides it.
-            await self.save_ready()
+            # Every connect, page load or R goes to the fixed reset pose (poses.json, else READY_DEFAULT).
+            # Pose by hand + Save as ready still overrides it.
+            self.ready = load_ready()
             self.run(self.home())
         except Exception as e:
             self.robot, self.state = None, "error"
@@ -344,7 +347,13 @@ KEY = ""
 async def handle(d):
     t = d.get("type")
     if t == "target":
-        B.target = {j: float(v) for j, v in d.get("joints", {}).items() if j in JOINTS}
+        raw = {j: float(v) for j, v in d.get("joints", {}).items() if j in JOINTS}
+        hist = B.__dict__.setdefault("target_hist", {})
+        for j, v in raw.items():
+            h = hist.setdefault(j, [])
+            h.append(v)
+            del h[:-TARGET_MEDIAN]
+        B.target = {j: float(np.median(hist[j])) for j in raw}
         B.target_t = time.monotonic()
         if not B.robot:
             B.tele.record("sim", B.target, {})
@@ -358,7 +367,7 @@ async def handle(d):
         await B.say("Connect the arm first. On the robot card, press Connect, or restart with --port COM3.")
     elif t == "engage":
         if d.get("on") and B.mode == "idle":
-            B.hold, B.blend = dict(B.cmd), 0.0
+            B.hold, B.blend, B.target_hist = dict(B.cmd), 0.0, {}
             B.blend_s = float(np.clip(d.get("blend_s", BLEND_S), 1.0, 3.0))
             B.target_t = time.monotonic()
             B.tele.start_session("mirror")
