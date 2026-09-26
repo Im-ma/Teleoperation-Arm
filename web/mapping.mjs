@@ -59,3 +59,17 @@ export function mapMatchedPose(features, reference, limits, flip = {}) {
   }
   return out;
 }
+
+// Simple sync: the robot's links copy the on-screen angles of your upper arm, forearm and hand.
+// Offsets measured from the SO-101 CAD seen side-on: upper link = lift + 104°,
+// forearm = upper + 74° + elbow, tool = forearm − 12° + wrist. No wrap, so the arm
+// never flips through a limit; out-of-reach poses just rest on the nearest stop.
+export function syncPose(f, limits) {
+  const out = {}, put = (j, v) => { if (Number.isFinite(v)) { const [lo, hi] = limits[j] ?? [-180, 180]; out[j] = clamp(v, lo, hi) } };
+  put("shoulder_lift", f.lift - 104);
+  put("elbow_flex", f.elbow - 74);
+  put("wrist_flex", f.wrist + 12);
+  put("shoulder_pan", 0);
+  put("wrist_roll", 0);
+  return out;
+}

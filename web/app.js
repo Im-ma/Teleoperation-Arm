@@ -3,7 +3,7 @@
 import { FilesetResolver, PoseLandmarker, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { JOINTS, clamp, mapMatchedPose, wrap } from "./mapping.mjs";
+import { JOINTS, clamp, mapMatchedPose, syncPose, wrap } from "./mapping.mjs";
 import { GOALPOST, armFeatures, framing, goalpostScore } from "./angles.mjs";
 import { FeatureFilter } from "./filters.mjs";
 import { createMirror } from "./mirror.mjs";
@@ -129,6 +129,8 @@ function frame(now) {
 
   // Hand not seen yet at lock: take its zero from the first good reading instead of a guess.
   if (S.ref?.lazy && fs) for (const k in S.ref.lazy) if (Number.isFinite(fs[k])) { S.ref.humanZero[k] = fs[k]; delete S.ref.lazy[k] }
+  // Which way the tracked arm reaches out on the (mirrored) screen: the twin is viewed from that side.
+  if (r) S.side = r.F.x[0] > 0 ? -1 : 1;
   const fr = r && framing(r, w, h);
   const person = r && { arm: r.arm, core: r.conf.lift >= 0.35 && r.conf.elbow >= 0.35, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
   const out = M.tick({ now, live: live(), engaged: S.engaged, robotReady: !live() || S.mode === "idle", person });
@@ -156,12 +158,12 @@ function act(a, fs, now, fromHold) {
     };
     S.target = { ...S.ref.robotZero };
   } else if (a === "engage") {
-    if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip) };
+    if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), ...syncPose(fs, limits()) };
     send({ type: "target", joints: finiteJoints(S.target) });
     // Re-engaging after HOLD can find the person's arm well away from where they left off; blend in slower.
     send({ type: "engage", on: true, blend_s: fromHold ? 2.5 : 1.5 });
   } else if (a === "send" && fs && S.ref) {
-    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip) };
+    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), ...syncPose(fs, limits()) };
     if (now - lastSend > 33) { send({ type: "target", joints: finiteJoints(S.target) }); lastSend = now }
   } else if (a === "disengage") send({ type: "engage", on: false });
   else if (a === "home") send({ type: "home" });
@@ -313,6 +315,7 @@ function makeTwin(el) {
   r.setPixelRatio(devicePixelRatio); el.appendChild(r.domElement);
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(38, 1, 0.01, 10);
   cam.position.set(0, 0.2, -0.8);
+  let viewSide = 1;
   const ctl = new OrbitControls(cam, r.domElement); ctl.target.set(0, 0.19, 0); ctl.enableDamping = true; ctl.enablePan = false;
   scene.add(new THREE.HemisphereLight(0xffffff, 0x1a2230, 1.5));
   const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(1, 2, -1.2); scene.add(dl);
@@ -325,6 +328,8 @@ function makeTwin(el) {
     requestAnimationFrame(tick);
     const w = el.clientWidth, h = el.clientHeight;
     if (r.domElement.width !== Math.round(w * devicePixelRatio)) { r.setSize(w, h); cam.aspect = w / h; cam.updateProjectionMatrix() }
+    const side = S.side ?? 1;
+    if (side !== viewSide) { viewSide = side; cam.position.set(0, 0.2, -0.8 * side); dl.position.set(1, 2, -1.2 * side) }
     const measured = live() && S.obs.shoulder_pan !== undefined;
     const src = measured ? S.obs : S.target;
     $("#twinLabel").textContent = measured ? "robot · measured" : "twin · target";
