@@ -18,10 +18,12 @@ export class OneEuro {
 
 // Per-feature settings: [minCutoff Hz, beta, dead zone, is an angle]
 const CFG = {
-  lift: [0.6, 0.015, 0, true], elbow: [0.6, 0.015, 0, true], wrist: [0.6, 0.015, 0, true],
-  roll: [1.0, 0.02, 0, true], pan: [0.5, 0.01, 5, true], grip: [2.0, 0.5, 0, false],
+  // Heavier smoothing plus a small dead zone: camera jitter of a degree or two never reaches the robot.
+  lift: [0.4, 0.01, 2, true], elbow: [0.4, 0.01, 2, true], wrist: [0.4, 0.01, 3, true],
+  roll: [0.6, 0.01, 3, true], pan: [0.3, 0.005, 8, true], grip: [1.5, 0.3, 0, false],
+  reachAng: [0.4, 0.01, 2, true], reach: [0.5, 0.3, 0.02, false],
 };
-const JUMP = 50;          // degrees in one frame = a tracking glitch, not a real move
+const JUMP = 30;          // degrees in one frame = a tracking glitch, not a real move: hold until it persists 0.2 s
 const MIN_CONF = 0.6;
 
 // Filters every feature and holds any joint whose confidence is low, so one bad

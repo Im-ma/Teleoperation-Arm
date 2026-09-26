@@ -4,7 +4,7 @@ import { FilesetResolver, PoseLandmarker, HandLandmarker } from "https://cdn.jsd
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { JOINTS, clamp, mapMatchedPose, wrap } from "./mapping.mjs";
-import { GOALPOST, armFeatures, framing, goalpostScore } from "./angles.mjs";
+import { GOALPOST, SIDE, armFeatures, framing, goalpostScore, physicalSide } from "./angles.mjs";
 import { FeatureFilter } from "./filters.mjs";
 import { createMirror } from "./mirror.mjs";
 import { LINES, createVoice } from "./voice.js";
@@ -20,7 +20,7 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catc
 const finiteJoints = j => Object.fromEntries(Object.entries(j).filter(([, v]) => Number.isFinite(v)));
 
 // Twin-only goalpost (no robot): upper link out, forearm up, gripper back across.
-const SIM_READY = { shoulder_pan: 0, shoulder_lift: -90, elbow_flex: 0, wrist_flex: 90, wrist_roll: 0, gripper: 60 };
+const SIM_READY = { shoulder_pan: 0, shoulder_lift: 76.0, elbow_flex: -73.8, wrist_flex: -5.1, wrist_roll: 90, gripper: 10 };   // arm straight forward, claw turned 90°, same as serve.py READY_DEFAULT
 const SIM_LIMITS = Object.fromEntries(JOINTS.map(j => [j, j === "gripper" ? [0, 100] : [-135, 135]]));
 
 const S = {
@@ -66,11 +66,38 @@ function playTwin(frames) {
 }
 
 // ---------- vision ----------
-let pose, hands;
+let pose, hands, handZoom;
 async function initVision() {
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm");
   const mk = (C, file, extra = {}) => C.createFromOptions(fs, { baseOptions: { modelAssetPath: `/models/${file}`, delegate: "GPU" }, runningMode: "VIDEO", ...extra });
-  [pose, hands] = await Promise.all([mk(PoseLandmarker, "pose_landmarker_full.task"), mk(HandLandmarker, "hand_landmarker.task", { numHands: 2, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.6 })]);
+  const handOpts = { minHandDetectionConfidence: 0.5, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.6 };
+  [pose, hands, handZoom] = await Promise.all([mk(PoseLandmarker, "pose_landmarker_full.task"),
+    mk(HandLandmarker, "hand_landmarker.task", { numHands: 2, ...handOpts }), mk(HandLandmarker, "hand_landmarker.task", { numHands: 1, ...handOpts })]);
+}
+
+// The hand is only ~5% of a 1280x720 frame, too small for reliable finger landmarks. Crop a square
+// around the tracked wrist (reaching past it toward the fingers), enlarge it to 256 px and find the hand
+// there; landmarks are mapped back to full-frame coordinates. Falls back to the full frame.
+const zoom = document.createElement("canvas"); zoom.width = zoom.height = 256;
+const zctx = zoom.getContext("2d", { willReadFrequently: false });
+function detectHand(L, now) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (L && vw) {
+    const [, e, wr] = SIDE[physicalSide(L, "right")];
+    const ex = L[e].x * vw, ey = L[e].y * vh, wx = L[wr].x * vw, wy = L[wr].y * vh, fl = Math.hypot(wx - ex, wy - ey);
+    if ((L[wr].visibility ?? 1) > 0.3 && fl > 10) {
+      const side = Math.max(2.4 * fl, 140), cx = wx + 0.45 * (wx - ex), cy = wy + 0.45 * (wy - ey);
+      const x0 = cx - side / 2, y0 = cy - side / 2;
+      zctx.clearRect(0, 0, 256, 256);
+      zctx.drawImage(video, x0, y0, side, side, 0, 0, 256, 256);
+      const z = handZoom.detectForVideo(zoom, now);
+      if (z.landmarks?.length) {
+        z.landmarks = z.landmarks.map(hl => hl.map(p => ({ ...p, x: (x0 + p.x * side) / vw, y: (y0 + p.y * side) / vh })));
+        return z;
+      }
+    }
+  }
+  return hands.detectForVideo(video, now);
 }
 
 async function startCamera() {
@@ -114,8 +141,9 @@ function frame(now) {
   lastT = video.currentTime;
   const w = view.width, h = view.height;
   now = lastTs = Math.max(lastTs + 1, now);   // MediaPipe needs strictly increasing timestamps
-  const pr = pose.detectForVideo(video, now), hr = hands.detectForVideo(video, now);
+  const pr = pose.detectForVideo(video, now);
   const L = pr.landmarks?.[0], W = pr.worldLandmarks?.[0];
+  const hr = detectHand(L, now);
 
   // Before locking, whichever arm is closer to the goalpost is the candidate.
   let r = null;
@@ -152,7 +180,7 @@ function act(a, fs, now, fromHold) {
   if (a === "lock") {
     const med = k => { const v = S.hist.map(s => s.f[k]).filter(Number.isFinite).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : undefined };
     S.ref = {
-      version: 1, arm: M.arm, physical: live(), robotZero: { ...robotZero() }, pinch: 0.12,
+      version: 1, arm: M.arm, physical: live(), robotZero: { ...robotZero() }, pinch: 0.25,
       lazy: Object.fromEntries(["wrist", "roll"].filter(k => med(k) === undefined).map(k => [k, 1])),
       humanZero: { lift: med("lift") ?? 0, elbow: med("elbow") ?? 0, pan: 0, wrist: med("wrist") ?? 90, roll: med("roll") ?? 0, grip: Math.max(0.35, med("grip") ?? 0.8) },
     };
@@ -319,6 +347,8 @@ function makeTwin(el) {
   cam.position.set(0, 0.2, -0.8);
   let viewSide = 1;
   const ctl = new OrbitControls(cam, r.domElement); ctl.target.set(0, 0.19, 0); ctl.enableDamping = true; ctl.enablePan = false;
+  let fitTick = 0, fitGoal = null, dragging = false;
+  ctl.addEventListener("start", () => { dragging = true }); ctl.addEventListener("end", () => { dragging = false });
   scene.add(new THREE.HemisphereLight(0xffffff, 0x1a2230, 1.5));
   const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(1, 2, -1.2); scene.add(dl);
   scene.add(new THREE.GridHelper(1.2, 24, 0x2a2f37, 0x181b20));
@@ -337,6 +367,18 @@ function makeTwin(el) {
     $("#twinLabel").textContent = measured ? "robot · measured" : "twin · target";
     for (const j of JOINTS) { const t = src[j] ?? 0; cur[j] = (cur[j] ?? t) + 0.25 * (t - (cur[j] ?? t)) }
     if (robot && JOINTS.every(j => Number.isFinite(cur[j]))) robot.setPose(cur);
+    // Keep the whole robot in frame: ease the view onto its bounding box (unless you're dragging it).
+    if (robot && !dragging && ++fitTick % 10 === 0) {
+      const box = new THREE.Box3().setFromObject(robot.root), c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+      const t = Math.tan(cam.fov * Math.PI / 360), d = 1.35 * Math.max(sz.y / 2 / t, Math.max(sz.x, sz.z) / 2 / (t * cam.aspect), 0.3);
+      fitGoal = { c, d };
+    }
+    if (fitGoal && !dragging) {
+      ctl.target.lerp(fitGoal.c, 0.08);
+      const off = cam.position.clone().sub(ctl.target);
+      off.setLength(off.length() + 0.08 * (fitGoal.d - off.length()));
+      cam.position.copy(ctl.target).add(off);
+    }
     ctl.update(); r.render(scene, cam);
   };
   tick();

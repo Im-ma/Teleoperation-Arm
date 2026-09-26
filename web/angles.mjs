@@ -86,6 +86,13 @@ export function armFeatures(L, W, hands, arm, w, h) {
   f.elbow = wrap(ang(F, fore) - f.lift);
   conf.lift = len(up) > 0.2 * F.sw ? Math.min(vis(s), vis(e)) : 0;
   conf.elbow = len(fore) > 0.2 * F.sw ? Math.min(conf.lift, vis(wr)) : 0;
+  // Where the hand is, not how the joints bend: wrist relative to shoulder in the body frame, as a
+  // direction (0 = straight out to the side, + up) and a reach (1 = arm fully extended). Reach is
+  // normalised by the arm's own length, or by 1.45 shoulder widths when the arm points at the camera.
+  const hv = sub(P(wr), P(s));
+  f.reachAng = ang(F, hv);
+  f.reach = len(hv) / Math.max(len(up) + len(fore), 1.45 * F.sw);
+  conf.reachAng = conf.reach = Math.min(vis(s), vis(e), vis(wr));
   const { pan, yaw } = panAngle(W, side);
   f.pan = pan; conf.pan = pan === undefined || yaw > 25 ? 0 : conf.lift;
   // the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,

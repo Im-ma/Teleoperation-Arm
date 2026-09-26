@@ -60,19 +60,52 @@ export function kinematicJoints(f, flip = {}) {
   return out;
 }
 
+// Hand-position mirroring (inverse kinematics). The robot's wrist pivot goes to the same place, relative to
+// its shoulder, as your wrist relative to your shoulder (scaled by reach), and the claw points where your
+// hand points. The elbow always bends the robot's natural way (elbow above the shoulder-wrist line), so a
+// raised hand raises the claw however your own elbow bends: nothing can run the opposite way.
+// Link lengths (m) from the URDF, in the arm's vertical plane.
+export const LINK = { upper: 0.116, fore: 0.135 };
+const R2D = 180 / Math.PI, D2R = Math.PI / 180;
+export function reachJoints(f, limits = {}) {
+  if (!finite(f?.reachAng) || !finite(f?.reach)) return null;
+  const { upper: a, fore: b } = LINK, lim = j => limits[j]?.every(finite) ? limits[j] : [-180, 180];
+  const [liftLo, liftHi] = lim("shoulder_lift"), [elbLo, elbHi] = lim("elbow_flex");
+  // a human arm never reads fully straight on camera: 92% of its length counts as straight
+  const d = (a + b) * clamp(f.reach / 0.92, 0.25, 1), phi = f.reachAng * D2R;
+  const W = [d * Math.cos(phi), d * Math.sin(phi)];
+  // law of cosines: bend = angle between the upper-arm and forearm directions (0 = straight)
+  let bend = Math.acos(clamp((d * d - a * a - b * b) / (2 * a * b), -1, 1));
+  bend = clamp(bend, (elbLo - KIN.elbow) * D2R, (elbHi - KIN.elbow) * D2R);
+  let U = phi + Math.atan2(b * Math.sin(bend), a + b * Math.cos(bend));       // upper-link elevation
+  const Ulo = (KIN.lift - liftHi) * D2R, Uhi = (KIN.lift - liftLo) * D2R;
+  let Fe;
+  if (U < Ulo || U > Uhi) {            // shoulder at its stop: aim the forearm at the target from the elbow
+    U = clamp(U, Ulo, Uhi);
+    Fe = Math.atan2(W[1] - a * Math.sin(U), W[0] - a * Math.cos(U));
+  } else Fe = U - bend;
+  const out = { shoulder_lift: KIN.lift - U * R2D, elbow_flex: clamp((U - Fe) * R2D + KIN.elbow, elbLo, elbHi) };
+  const Fdeg = U * R2D - (out.elbow_flex - KIN.elbow);
+  // the claw points where your hand points (or along your forearm when the hand isn't seen)
+  const handEl = finite(f.lift) && finite(f.elbow) ? f.lift + f.elbow + (finite(f.wrist) ? wrap(f.wrist) : 0) : Fdeg;
+  out.wrist_flex = Fdeg + KIN.wrist - handEl;
+  return out;
+}
+
 export function mapMatchedPose(features, reference, limits, flip = {}) {
   if (!validReference(reference)) return {};
   const out = {}, put = (j, v) => {
     const range = limits[j];
     if (finite(v) && range?.every(finite) && range[0] < range[1]) out[j] = clamp(v, ...range);
   };
-  for (const [j, v] of Object.entries(kinematicJoints(features, flip))) put(j, v);
+  for (const [j, v] of Object.entries(reachJoints(features, limits) ?? kinematicJoints(features, flip))) put(j, v);
   // Base: swinging the arm toward the camera swings the robot toward the viewer of the twin.
   if (finite(features?.pan)) put("shoulder_pan", reference.robotZero.shoulder_pan + DEFAULT_SIGN.shoulder_pan * (flip.shoulder_pan ? -1 : 1) * wrap(features.pan));
   if (finite(features?.roll)) put("wrist_roll", reference.robotZero.wrist_roll + DEFAULT_SIGN.wrist_roll * (flip.wrist_roll ? -1 : 1) * wrap(features.roll - reference.humanZero.roll));
   if (finite(features?.grip)) {
-    // Pinch closes the jaw fully, an open hand opens it fully, across the gripper's whole range.
-    const openRef = Math.max(reference.humanZero.grip, 0.6);
+    // A fist or pinch (thumb tip to index tip under a quarter hand length) closes the jaw fully and a
+    // relaxed open hand opens it fully, across the gripper's whole range.
+    const openRef = clamp(reference.humanZero.grip, 0.6, 0.9);
     const open = clamp((features.grip - reference.pinch) / (openRef - reference.pinch), 0, 1);
     const [lo, hi] = limits.gripper?.every(finite) ? limits.gripper : [0, 100];
     put("gripper", flip.gripper ? hi - open * (hi - lo) : lo + open * (hi - lo));
