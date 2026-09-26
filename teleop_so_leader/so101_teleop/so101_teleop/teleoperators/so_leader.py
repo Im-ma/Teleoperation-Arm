@@ -1,31 +1,14 @@
-# !/usr/bin/env python
-
-# Copyright 2026 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#!/usr/bin/env python
 
 import logging
 import time
 
-from lerobot.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot.motors.feetech import (
-    FeetechMotorsBus,
-    OperatingMode,
-)
-from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
+from so101_teleop.decorators import check_if_already_connected, check_if_not_connected
+from so101_teleop.motors import Motor, MotorCalibration, MotorNormMode
+from so101_teleop.motors.feetech import FeetechMotorsBus, OperatingMode
 
-from ..teleoperator import Teleoperator
 from .config_so_leader import SOLeaderTeleopConfig
+from .teleoperator import Teleoperator
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +35,7 @@ _HOMING_POSITION_DIAGRAM = r"""
 
 
 class SOLeader(Teleoperator):
-    """Generic SO leader base for SO-100/101/10X teleoperators."""
+    """SO-100/101/10X leader arm."""
 
     config_class = SOLeaderTeleopConfig
     name = "so_leader"
@@ -104,7 +87,6 @@ class SOLeader(Teleoperator):
 
     def calibrate(self) -> None:
         if self.calibration:
-            # Calibration file exists, ask user whether to use it or run new calibration
             user_input = input(
                 f"Press ENTER to use provided calibration file associated with the id {self.id}, or type 'c' and press ENTER to run calibration: "
             )
@@ -133,7 +115,7 @@ class SOLeader(Teleoperator):
         range_mins[full_turn_motor] = 0
         range_maxes[full_turn_motor] = 4095
 
-        self.calibration: dict[str, MotorCalibration] = {}
+        self.calibration = {}
         for motor, m in self.bus.motors.items():
             self.calibration[motor] = MotorCalibration(
                 id=m.id,
