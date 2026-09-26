@@ -119,7 +119,7 @@ function frame(now) {
   // Before locking, whichever arm is closer to the goalpost is the candidate.
   let r = null;
   if (L) {
-    const arms = (M.arm ? [M.arm] : ["right", "left"]).map(a => armFeatures(L, W, hr, a, w, h)).filter(Boolean);
+    const arms = ["right"].map(a => armFeatures(L, W, hr, a, w, h)).filter(Boolean);
     arms.sort((a, b) => goalpostScore(b) - goalpostScore(a) + 0.01 * ((b.arm === S.lastArm) - (a.arm === S.lastArm)));
     r = arms[0] || null;
   }
