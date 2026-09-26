@@ -182,7 +182,7 @@ function draw(pr, r, fr, out) {
   ctx.lineCap = ctx.lineJoin = "round";
 
   // ghost goalpost: where your arm should go
-  if (st === "WAITING" || st === "ACQUIRING" || st === "HOMING" || st === "BOOT") ghost(r, out.ring);
+  if (st === "HOMING" || st === "BOOT") ghost(r, 0);
   if (L) {
     ctx.strokeStyle = "rgba(255,255,255,.25)"; ctx.lineWidth = 3;
     for (const [a, b] of [[11, 12], [11, 23], [12, 24], [23, 24], [11, 13], [13, 15], [12, 14], [14, 16]]) line(P(L[a]), P(L[b]));

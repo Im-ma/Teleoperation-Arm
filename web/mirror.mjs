@@ -6,7 +6,7 @@
 // observation: { now, robotReady, engaged, live, person }
 //   person: { arm, core, score, framing: {ok, hint}, id: {cx, sw} } or null
 // result: { state, ring (0..1), hint, say, actions: [lock | engage | disengage | send | reset | home] }
-export const T = { LOCK_MS: 400, SEEN_MS: 300, LOST_MS: 400, BACK_MS: 500, SAME_MS: 3000, HOME_MS: 10000, GONE_MS: 1500, HINT_MS: 700, LIVE_HINT_MS: 2500 };
+export const T = { LOCK_MS: 1, SEEN_MS: 150, LOST_MS: 400, BACK_MS: 500, SAME_MS: 3000, HOME_MS: 10000, GONE_MS: 1500, HINT_MS: 700, LIVE_HINT_MS: 2500 };
 
 export function createMirror() {
   let state = "BOOT", since = 0, last = 0, seen = 0, lock = 0, lastOk = 0, lostAt = 0, id = null, arm = null;

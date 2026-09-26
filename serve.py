@@ -447,7 +447,10 @@ async def auth(req, handler):
         key = req.query.get("key") or req.headers.get("Authorization", "").removeprefix("Bearer ")
         if not secrets.compare_digest(key.encode(), KEY.encode()):
             raise web.HTTPUnauthorized(text="Missing or wrong key")
-    return await handler(req)
+    resp = await handler(req)
+    if req.path.startswith("/web/") and not req.path.startswith("/web/robot/"):
+        resp.headers["Cache-Control"] = "no-store"   # edits show up on a plain reload
+    return resp
 
 
 async def index(_):
