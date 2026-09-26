@@ -68,7 +68,7 @@ async def command(text: str) -> dict:
     text = text.strip()[:300]
     if not key:
         return {**keyword_command(text), "by": "keywords"}
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
     body = {
         "systemInstruction": {"parts": [{"text": SYSTEM}]},
         "contents": [{"role": "user", "parts": [{"text": text}]}],
