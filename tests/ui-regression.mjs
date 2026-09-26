@@ -17,7 +17,7 @@ import { createMirror } from '../web/mirror.mjs';
 import { estimateSyncQuality } from '../web/ui-metrics.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const BASE = '633afd82e24d8156b3f29baeb97a6c257a3b1134';
+const BASE = 'bf38745';   // robot code the UI is integrated against (IK mirroring + accuracy)
 const git = (...args) => execFileSync('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 });
 const original = path => git('show', `${BASE}:${path}`);
 const current = path => readFileSync(resolve(root, path));
@@ -99,7 +99,7 @@ function makeHarness(source) {
   const dispatch = event => { for (const fn of listeners.get(event.type) ?? []) fn(event); return true; };
   class BasicThree {
     constructor() { this.position = { set() {} }; this.target = { set() {} }; this.domElement = new Element(); }
-    add() {} setPixelRatio() {} setSize() {} updateProjectionMatrix() {} update() {} render() {}
+    add() {} addEventListener() {} setPixelRatio() {} setSize() {} updateProjectionMatrix() {} update() {} render() {}
   }
   class Socket {
     constructor(url) { this.url = url; this.readyState = 1; logs.sockets.push(this); }
