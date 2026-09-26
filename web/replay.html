@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marionette Replay</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0c0e;--panel:#131519;--line:#23262d;--text:#eceae4;--dim:#8a8d94;--acc:#c8ff3d;--acc2:#5ad1ff}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 'Space Grotesk',system-ui,sans-serif;padding:18px;max-width:1100px;margin:auto}
+h1{font-size:22px;letter-spacing:.1em;margin-bottom:4px} h1 i{color:var(--acc);font-style:normal}
+p{color:var(--dim);margin-bottom:14px} a{color:var(--acc2)}
+.sessions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+.sessions button{font:12px 'JetBrains Mono',monospace;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:none;color:var(--dim);cursor:pointer}
+.sessions button.on{background:var(--acc);color:#0b0c0e;border-color:var(--acc)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+.card h3{font:12px 'JetBrains Mono',monospace;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;display:flex;justify-content:space-between}
+canvas{width:100%;height:120px;display:block}
+.key{font:12px 'JetBrains Mono',monospace;color:var(--dim)} .key b{color:var(--acc)} .key s{color:var(--acc2);text-decoration:none}
+</style>
+</head>
+<body>
+<h1>MARIONETTE<i>·</i>REPLAY</h1>
+<p>Every mirroring session, 10 samples a second: what your arm asked for vs where the robot actually was. <a href="/">← back to live</a> <span id="tiger"></span></p>
+<div class="sessions" id="sessions">Loading…</div>
+<p class="key"><b>━ target (you)</b> &nbsp; <s>━ measured (robot)</s> &nbsp; <span id="stats"></span></p>
+<div class="grid" id="grid"></div>
+<script type="module">
+const JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"];
+const $ = s => document.querySelector(s);
+const { sessions, tiger } = await (await fetch("/api/sessions")).json();
+$("#tiger").textContent = tiger ? "· also stored in Tiger Data" : "";
+if (!sessions.length) $("#sessions").textContent = "No sessions yet. Strike the pose on the live page to record one.";
+else {
+  $("#sessions").innerHTML = sessions.map(s => `<button data-id="${s.id}">${s.id.replace(/(..)(..)(..)/, "$1:$2:$3")} · ${s.why} · ${(s.n / 10).toFixed(0)}s</button>`).join("");
+  $("#sessions").onclick = e => e.target.dataset.id && show(e.target.dataset.id);
+  show(sessions[0].id);
+}
+async function show(id) {
+  document.querySelectorAll(".sessions button").forEach(b => b.classList.toggle("on", b.dataset.id === id));
+  const { rows } = await (await fetch("/api/telemetry?session=" + id)).json();
+  $("#grid").innerHTML = JOINTS.map(j => `<div class="card"><h3>${j.replace("_", " ")}<span id="e_${j}"></span></h3><canvas id="c_${j}"></canvas></div>`).join("");
+  let lagSum = 0, lagN = 0;
+  for (const j of JOINTS) {
+    const c = $("#c_" + j), ctx = c.getContext("2d"), w = c.width = c.clientWidth * devicePixelRatio, h = c.height = c.clientHeight * devicePixelRatio;
+    const T = rows.map(r => r.target[j]), M = rows.map(r => r.measured[j]);
+    const vals = [...T, ...M].filter(Number.isFinite);
+    if (!vals.length) continue;
+    const lo = Math.min(...vals) - 5, hi = Math.max(...vals) + 5, x = i => i / Math.max(1, rows.length - 1) * w, y = v => h - (v - lo) / (hi - lo) * h;
+    const plot = (A, col) => { ctx.strokeStyle = col; ctx.lineWidth = 2 * devicePixelRatio; ctx.beginPath(); let on = false; A.forEach((v, i) => { if (!Number.isFinite(v)) return on = false; on ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)); on = true }); ctx.stroke() };
+    plot(T, "#c8ff3d"); plot(M, "#5ad1ff");
+    const err = rows.map(r => Math.abs(r.target[j] - r.measured[j])).filter(Number.isFinite);
+    if (err.length) { const m = err.reduce((a, b) => a + b) / err.length; $("#e_" + j).textContent = `avg gap ${m.toFixed(1)}${j === "gripper" ? "%" : "°"}`; lagSum += m; lagN++ }
+  }
+  $("#stats").textContent = `${rows.length} samples · ${(rows.length / 10).toFixed(1)} s` + (lagN ? ` · avg tracking gap ${(lagSum / lagN).toFixed(1)}°` : " · twin only (no robot measured)");
+}
+</script>
+</body>
+</html>

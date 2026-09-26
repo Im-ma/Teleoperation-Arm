@@ -27,6 +27,7 @@ class Telemetry:
         self.session: str | None = None
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=5000)
         self.db = None
+        self.last = 0.0
 
     def start_session(self, why: str) -> None:
         self.session = time.strftime("%H%M%S")
@@ -36,9 +37,11 @@ class Telemetry:
         self.session = None
 
     def record(self, mode: str, target: dict, measured: dict) -> None:
-        if not self.session:
+        now = time.time()
+        if not self.session or now - self.last < 0.09:   # 10 Hz is plenty for replay
             return
-        row = (time.time(), self.session, mode, dict(target), dict(measured))
+        self.last = now
+        row = (now, self.session, mode, dict(target), dict(measured))
         self.rows.append(row)
         self.sessions[self.session]["n"] += 1
         if self.db and not self.queue.full():

@@ -12,3 +12,4 @@ models/
 .key
 poses.json
 voice_cache/
+web/*.mp4

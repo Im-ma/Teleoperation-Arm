@@ -19,7 +19,7 @@ VOICE_CACHE = HERE / "voice_cache"
 
 
 def load_env() -> None:
-    for path in (HERE / ".env", HERE.parent.parent / ".env"):
+    for path in (HERE / ".env",):
         if path.exists():
             for line in path.read_text().splitlines():
                 k, sep, v = line.partition("=")

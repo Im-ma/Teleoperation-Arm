@@ -94,7 +94,7 @@ export function armFeatures(L, W, hands, arm, w, h) {
 export function goalpostScore(r) {
   if (!r || r.conf.elbow < 0.5) return 0;
   const { lift, elbow, pan } = r.f;
-  const s = 1 - Math.max(Math.abs(lift - GOALPOST.lift) / 25, Math.abs(elbow - GOALPOST.elbow) / 30, Number.isFinite(pan) ? Math.abs(pan) / 35 : 0);
+  const s = 1 - Math.max(Math.abs(lift - GOALPOST.lift) / 30, Math.abs(elbow - GOALPOST.elbow) / 45, Number.isFinite(pan) ? Math.abs(pan) / 60 : 0);
   return Math.max(0, s);
 }
 

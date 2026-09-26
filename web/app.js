@@ -77,23 +77,32 @@ async function startCamera() {
     S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { width: 1280, height: 720, facingMode: "user" } });
     video.srcObject = S.stream;
   }
-  await video.play();
+  // Chrome may pause a muted video while the page is in the background; keep nudging it.
+  await video.play().catch(() => {});
+  setInterval(() => { if (video.paused) video.play().catch(() => {}) }, 1000);
+  if (video.readyState < 1) await new Promise(r => video.addEventListener("loadedmetadata", r, { once: true }));
   view.width = video.videoWidth; view.height = video.videoHeight;
   $("#gate").innerHTML = "<div><h1>Loading the tracker…</h1><p>First time takes a few seconds.</p></div>";
   if (!pose) await initVision();
   $("#gate").hidden = true;
-  requestAnimationFrame(frame);
+  frame(performance.now());
+  if (src) {   // recorded clip: keep tracking even in a background tab, and expose state for tests
+    setInterval(() => document.hidden && frame(performance.now()), 50);
+    window.__mirror = { get state() { return M.state }, get arm() { return M.arm }, S, get person() { return lastR && { arm: lastR.arm, f: lastR.f } } };
+  }
   pills();
 }
-$("#start").onclick = () => { unlockAudio(); startCamera().catch(e => { $("#gate").querySelector("p").textContent = "Camera blocked: " + e.message }) };
+$("#start").onclick = () => { unlockAudio(); startCamera().catch(e => { $("#gate").querySelector("p").textContent = "Couldn't start the camera: " + e.message }) };
 
 // ---------- main loop ----------
 let lastT = -1, fpsT = 0, fpsN = 0, lastSend = 0, lastR = null, lastOut = { state: "BOOT" };
+let rafPending = false, lastTs = 0;
 function frame(now) {
-  requestAnimationFrame(frame);
+  if (!rafPending) { rafPending = true; requestAnimationFrame(t => { rafPending = false; frame(t) }) }
   if (video.readyState < 2 || video.currentTime === lastT) return;
   lastT = video.currentTime;
   const w = view.width, h = view.height;
+  now = lastTs = Math.max(lastTs + 1, now);   // MediaPipe needs strictly increasing timestamps
   const pr = pose.detectForVideo(video, now), hr = hands.detectForVideo(video, now);
   const L = pr.landmarks?.[0], W = pr.worldLandmarks?.[0];
 
@@ -335,4 +344,5 @@ makeTwin($("#twin"));
 connectWS();
 states(); pills();
 // Start on our own when the camera is already allowed (no click needed at the demo table).
-navigator.permissions?.query({ name: "camera" }).then(p => { if (p.state === "granted" || params.get("video")) $("#start").click() }).catch(() => {});
+if (params.get("video")) $("#start").click();
+else navigator.permissions?.query({ name: "camera" }).then(p => { if (p.state === "granted") $("#start").click() }).catch(() => {});

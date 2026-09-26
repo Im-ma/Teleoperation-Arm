@@ -30,7 +30,8 @@ button.pill{background:none;cursor:pointer}
 main{flex:1;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px;padding:14px;min-height:0}
 .cam{position:relative;border-radius:var(--r);overflow:hidden;background:#000;min-height:0}
 #view{width:100%;height:100%;object-fit:contain;display:block}
-#video{display:none}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:0}
+#view{position:relative;z-index:1}
 .caption{position:absolute;left:0;right:0;top:0;padding:22px 26px 40px;font-size:clamp(20px,2.6vw,34px);font-weight:700;line-height:1.15;
   background:linear-gradient(#000c,#0000);text-shadow:0 2px 12px #000;transition:color .2s}
 .caption small{display:block;font:500 13px var(--mono);color:var(--dim);letter-spacing:.12em;margin-bottom:6px;text-transform:uppercase}
@@ -123,7 +124,7 @@ body.demo header .dbg,body.demo #debug{display:none}
     </details>
   </section>
 </main>
-<footer><span><kbd>Esc</kbd> stop</span><span><kbd>G</kbd> talk</span><span><kbd>M</kbd> mute</span><span><kbd>R</kbd> reset</span><span class="grow"></span><span id="fps"></span></footer>
+<footer><span><kbd>Esc</kbd> stop</span><span><kbd>G</kbd> talk</span><span><kbd>M</kbd> mute</span><span><kbd>R</kbd> reset</span><span class="grow"></span><span id="fps"></span><a href="/web/replay.html" style="color:inherit">replay ↗</a></footer>
 <script type="module" src="/web/app.js"></script>
 </body>
 </html>

@@ -338,7 +338,7 @@ async def handle(d):
     if t == "target":
         B.target = {j: float(v) for j, v in d.get("joints", {}).items() if j in JOINTS}
         B.target_t = time.monotonic()
-        if not B.robot and B.tele.session and len(B.tele.rows) % 3 == 0:
+        if not B.robot:
             B.tele.record("sim", B.target, {})
     elif t == "engage" and not B.robot:
         B.tele.start_session("twin") if d.get("on") else B.tele.end_session()
