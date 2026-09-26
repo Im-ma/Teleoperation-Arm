@@ -42,38 +42,40 @@ export function validReference(c) {
     && finite(c.pinch) && c.humanZero.grip - c.pinch > 0.08;
 }
 
-export function mapMatchedPose(features, reference, limits, flip = {}) {
-  if (!validReference(reference)) return {};
+// Exact SO-101 kinematics, fitted from the URDF (error < 0.001°). Elevations are degrees above
+// horizontal, pointing forward, in the arm's vertical plane:
+//   upper link = 76.03 − shoulder_lift
+//   forearm    = upper − 73.82 − elbow_flex
+//   tool       = forearm − 5.05 − wrist_flex
+// The human features use the same convention (upper arm = lift, forearm = lift + elbow,
+// hand = lift + elbow + wrist), so each robot link copies the matching human segment:
+export const KIN = { lift: 76.03, elbow: -73.82, wrist: -5.05 };
+export function kinematicJoints(f, flip = {}) {
   const out = {};
-  for (const [joint, feature] of Object.entries(FEATURES)) {
-    if (!finite(features?.[feature])) continue;
-    const range = limits[joint];
-    if (!range || !range.every(finite) || range[0] >= range[1]) continue;
-    let delta = features[feature] - reference.humanZero[feature];
-    if (circular(feature)) delta = wrap(delta);
-    if (joint === "elbow_flex") delta = Math.abs(delta);   // the robot's elbow folds one way only: any bend is a fold
-    const direction = DEFAULT_SIGN[joint] * (flip[joint] ? -1 : 1);
-    out[joint] = clamp(reference.robotZero[joint] + direction * delta, ...range);
-  }
-  if (finite(features?.grip)) {
-    const open = clamp((features.grip - reference.pinch) / (reference.humanZero.grip - reference.pinch), 0, 1);
-    const closed = flip.gripper ? 100 : 0;
-    // Reopening reproduces the photographed jaw opening, even if it was partial.
-    out.gripper = clamp(closed + open * (reference.robotZero.gripper - closed), 0, 100);
-  }
+  if (finite(f?.lift)) out.shoulder_lift = KIN.lift - f.lift;
+  // The robot's forearm can only fold one way (at most 23° past straight), so a bend in either
+  // direction folds it by the same amount. Flip the elbow for exact signed geometry instead.
+  if (finite(f?.elbow)) out.elbow_flex = KIN.elbow + (flip.elbow_flex ? -f.elbow : Math.abs(f.elbow));
+  if (finite(f?.wrist)) out.wrist_flex = KIN.wrist - (flip.wrist_flex ? -1 : 1) * wrap(f.wrist);
   return out;
 }
 
-// Simple sync: the robot's links copy the on-screen angles of your upper arm, forearm and hand.
-// Offsets measured from the SO-101 CAD seen side-on: upper link = lift + 104°,
-// forearm = upper + 74° + elbow, tool = forearm − 12° + wrist. No wrap, so the arm
-// never flips through a limit; out-of-reach poses just rest on the nearest stop.
-export function syncPose(f, limits) {
-  const out = {}, put = (j, v) => { if (Number.isFinite(v)) { const [lo, hi] = limits[j] ?? [-180, 180]; out[j] = clamp(v, lo, hi) } };
-  put("shoulder_lift", f.lift - 104);
-  put("elbow_flex", f.elbow - 74);
-  put("wrist_flex", f.wrist + 12);
-  put("shoulder_pan", 0);
-  put("wrist_roll", 0);
+export function mapMatchedPose(features, reference, limits, flip = {}) {
+  if (!validReference(reference)) return {};
+  const out = {}, put = (j, v) => {
+    const range = limits[j];
+    if (finite(v) && range?.every(finite) && range[0] < range[1]) out[j] = clamp(v, ...range);
+  };
+  for (const [j, v] of Object.entries(kinematicJoints(features, flip))) put(j, v);
+  // Base: swinging the arm toward the camera swings the robot toward the viewer of the twin.
+  if (finite(features?.pan)) put("shoulder_pan", reference.robotZero.shoulder_pan + DEFAULT_SIGN.shoulder_pan * (flip.shoulder_pan ? -1 : 1) * wrap(features.pan));
+  if (finite(features?.roll)) put("wrist_roll", reference.robotZero.wrist_roll + DEFAULT_SIGN.wrist_roll * (flip.wrist_roll ? -1 : 1) * wrap(features.roll - reference.humanZero.roll));
+  if (finite(features?.grip)) {
+    // Pinch closes the jaw fully, an open hand opens it fully, across the gripper's whole range.
+    const openRef = Math.max(reference.humanZero.grip, 0.6);
+    const open = clamp((features.grip - reference.pinch) / (openRef - reference.pinch), 0, 1);
+    const [lo, hi] = limits.gripper?.every(finite) ? limits.gripper : [0, 100];
+    put("gripper", flip.gripper ? hi - open * (hi - lo) : lo + open * (hi - lo));
+  }
   return out;
 }

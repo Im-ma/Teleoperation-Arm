@@ -66,6 +66,8 @@ export function handFeatures(Hn, Hw, F, fore, w, h) {
 // flipped: read the same physical arm from the other index set. Near profile the gap is ambiguous, so keep
 // the last verdict until the shoulders clearly separate again.
 let flipped = false;
+let lastWrist = null;
+const BLUR_SPEED = 1.5;   // shoulder widths per second; faster than this the hand is too blurred to read
 export function physicalSide(L, arm) {
   const gap = L[11].x - L[12].x;                // > 0 when facing the camera with labels intact
   if (gap > 0.03) flipped = false; else if (gap < -0.03) flipped = true;
@@ -89,15 +91,20 @@ export function armFeatures(L, W, hands, arm, w, h) {
   // the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,
   // and within a third of a shoulder width (so a stray hand across the body is never taken)
   const ow = SIDE[side === "right" ? "left" : "right"][2];
-  let H = null, Hw = null, best = 0.35 * F.sw;
+  let H = null, Hw = null, Hs = 0, best = 0.35 * F.sw;
   (hands?.landmarks || []).forEach((hl, i) => {
     const hx = hl[0].x * w, hy = hl[0].y * h;
     const d = Math.hypot(hx - L[wr].x * w, hy - L[wr].y * h), dOther = Math.hypot(hx - L[ow].x * w, hy - L[ow].y * h);
-    if (d < best && d < dOther) { best = d; H = hl; Hw = hands.worldLandmarks?.[i] }
+    if (d < best && d < dOther) { best = d; H = hl; Hw = hands.worldLandmarks?.[i]; Hs = hands.handedness?.[i]?.[0]?.score ?? 1 }
   });
+  // A fast-moving hand is motion-blurred and its finger landmarks are guesses: hold the hand
+  // joints (claw, wrist, roll) until it slows, rather than snapping the claw on a blurred frame.
+  const now = performance.now(), wx = L[wr].x * w, wy = L[wr].y * h;
+  const speed = lastWrist && now - lastWrist.t < 250 ? Math.hypot(wx - lastWrist.x, wy - lastWrist.y) / F.sw / ((now - lastWrist.t) / 1000) : 0;
+  lastWrist = { x: wx, y: wy, t: now };
   if (H) {
     const hf = handFeatures(H, Hw, F, fore, w, h);
-    const ok = hf.handLen > 0.15 * F.sw ? 1 : 0;
+    const ok = hf.handLen > 0.15 * F.sw && Hs >= 0.7 && speed < BLUR_SPEED ? 1 : 0;
     f.wrist = hf.wrist; conf.wrist = ok;
     f.grip = hf.grip; conf.grip = ok;
     f.roll = hf.roll; conf.roll = ok && hf.rollOk ? 1 : 0;

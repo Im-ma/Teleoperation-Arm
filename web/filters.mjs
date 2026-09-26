@@ -28,7 +28,7 @@ const MIN_CONF = 0.6;
 // landmark freezes that joint instead of stopping the whole arm.
 export class FeatureFilter {
   constructor() { this.f = {}; this.raw = {}; this.out = {}; this.held = {} }
-  reset() { this.f = {}; this.raw = {}; this.out = {}; this.held = {} }
+  reset() { this.f = {}; this.raw = {}; this.out = {}; this.held = {}; this.buf = [] }
   update(feat, conf, t) {
     for (const [k, [mc, beta, dead, isAngle]] of Object.entries(CFG)) {
       let x = feat[k];
@@ -39,6 +39,10 @@ export class FeatureFilter {
         x = this.raw[k].u + d;                              // unwrapped
       }
       if (!good) { this.held[k] = true; continue }
+      if (k === "grip") {   // median of the last 5 readings: one misread frame can't flick the claw
+        const b = (this.buf ??= []); b.push(x); if (b.length > 5) b.shift();
+        x = [...b].sort((p, q) => p - q)[b.length >> 1];
+      }
       this.raw[k] = { x: feat[k], u: x, t };
       const y = (this.f[k] ??= new OneEuro(mc, beta)).filter(x, t);
       const o = this.out[k];   // dead zone with hysteresis: small wobble never reaches the robot, big moves pass smoothly

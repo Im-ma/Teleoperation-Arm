@@ -3,7 +3,7 @@
 import { FilesetResolver, PoseLandmarker, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { JOINTS, clamp, mapMatchedPose, syncPose, wrap } from "./mapping.mjs";
+import { JOINTS, clamp, mapMatchedPose, wrap } from "./mapping.mjs";
 import { GOALPOST, armFeatures, framing, goalpostScore } from "./angles.mjs";
 import { FeatureFilter } from "./filters.mjs";
 import { createMirror } from "./mirror.mjs";
@@ -70,14 +70,14 @@ let pose, hands;
 async function initVision() {
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm");
   const mk = (C, file, extra = {}) => C.createFromOptions(fs, { baseOptions: { modelAssetPath: `/models/${file}`, delegate: "GPU" }, runningMode: "VIDEO", ...extra });
-  [pose, hands] = await Promise.all([mk(PoseLandmarker, "pose_landmarker_full.task"), mk(HandLandmarker, "hand_landmarker.task", { numHands: 2 })]);
+  [pose, hands] = await Promise.all([mk(PoseLandmarker, "pose_landmarker_full.task"), mk(HandLandmarker, "hand_landmarker.task", { numHands: 2, minHandDetectionConfidence: 0.6, minHandPresenceConfidence: 0.6, minTrackingConfidence: 0.6 })]);
 }
 
 async function startCamera() {
   const src = params.get("video");   // ?video=/web/clip.mp4 replays a recording instead of the webcam
   if (src) { video.src = src; video.loop = true }
   else {
-    S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { width: 1280, height: 720, facingMode: "user" } });
+    S.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { width: 1280, height: 720, frameRate: { ideal: 60 }, facingMode: "user" } });
     video.srcObject = S.stream;
   }
   // Chrome may pause a muted video while the page is in the background; keep nudging it.
@@ -158,12 +158,12 @@ function act(a, fs, now, fromHold) {
     };
     S.target = { ...S.ref.robotZero };
   } else if (a === "engage") {
-    if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), shoulder_pan: S.ref.robotZero.shoulder_pan, wrist_roll: S.ref.robotZero.wrist_roll };
+    if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), wrist_roll: S.ref.robotZero.wrist_roll };
     send({ type: "target", joints: finiteJoints(S.target) });
     // Re-engaging after HOLD can find the person's arm well away from where they left off; blend in slower.
     send({ type: "engage", on: true, blend_s: fromHold ? 2.5 : 1.5 });
   } else if (a === "send" && fs && S.ref) {
-    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), shoulder_pan: S.ref.robotZero.shoulder_pan, wrist_roll: S.ref.robotZero.wrist_roll };
+    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip), wrist_roll: S.ref.robotZero.wrist_roll };
     if (now - lastSend > 33) { send({ type: "target", joints: finiteJoints(S.target) }); lastSend = now }
   } else if (a === "disengage") send({ type: "engage", on: false });
   else if (a === "home") send({ type: "home" });
