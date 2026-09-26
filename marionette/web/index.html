@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Marionette</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+"three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
+</script>
+<style>
+:root{
+  --bg:#0b0c0e; --panel:#131519; --line:#23262d; --text:#eceae4; --dim:#8a8d94;
+  --acc:#c8ff3d; --acc2:#5ad1ff; --warn:#ffb13d; --bad:#ff5a5a;
+  --r:22px; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font:16px/1.45 'Space Grotesk',system-ui,sans-serif;
+  background-image:radial-gradient(1200px 600px at 80% -10%,#1b2410 0,transparent 60%),
+  radial-gradient(900px 500px at -10% 110%,#0d1d26 0,transparent 60%);overflow-x:hidden}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
+header{display:flex;align-items:center;gap:16px;padding:18px 28px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:20px;letter-spacing:-.02em}
+.logo svg{width:28px;height:28px}
+.pills{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.pill{font:12px var(--mono);padding:6px 10px;border:1px solid var(--line);border-radius:99px;color:var(--dim);display:flex;align-items:center;gap:7px;white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.pill.ok i{background:var(--acc);box-shadow:0 0 10px var(--acc)} .pill.warn i{background:var(--warn)} .pill.bad i{background:var(--bad)}
+main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(340px,1fr);gap:20px;padding:0 28px 28px;min-height:calc(100vh - 76px)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);position:relative;overflow:hidden}
+#stage{display:flex;align-items:center;justify-content:center;min-height:420px}
+#stage canvas{width:100%;height:100%;object-fit:contain;display:block}
+#stage .empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--dim);text-align:center;padding:30px}
+#stage .empty b{display:block;color:var(--text);font-size:22px;margin-bottom:6px}
+video{display:none}
+.hud{position:absolute;left:16px;bottom:16px;right:16px;display:flex;gap:8px;flex-wrap:wrap;pointer-events:none}
+.tag{font:12px var(--mono);background:#000a;backdrop-filter:blur(8px);padding:6px 10px;border-radius:10px;border:1px solid #ffffff14}
+.banner{position:absolute;top:16px;left:50%;transform:translateX(-50%);font-weight:700;padding:10px 18px;border-radius:99px;background:var(--acc);color:#111;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
+.banner.show{opacity:1} .banner.bad{background:var(--bad);color:#fff}
+#panel{display:flex;flex-direction:column;padding:28px;gap:18px}
+.kicker{font:12px var(--mono);color:var(--acc);letter-spacing:.12em;text-transform:uppercase}
+h1{font-size:44px;line-height:1.02;letter-spacing:-.035em}
+h2{font-size:30px;line-height:1.08;letter-spacing:-.03em}
+p.lead{color:var(--dim);font-size:17px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;padding:15px 22px;border-radius:16px;font-weight:700;background:var(--acc);color:#111;transition:transform .15s,opacity .2s}
+.btn:hover{transform:translateY(-1px)} .btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1}
+select{font:inherit;color:var(--text);background:#0e1013;border:1px solid var(--line);border-radius:12px;padding:12px;width:100%}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;padding:3px}
+.seg button{padding:8px 16px;border-radius:9px;color:var(--dim)} .seg button.on{background:#ffffff12;color:var(--text)}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.check{display:flex;align-items:center;gap:10px;padding:14px;border:1px solid var(--line);border-radius:14px;color:var(--dim);transition:.2s}
+.check.on{color:var(--text);border-color:#c8ff3d55;background:#c8ff3d0d}
+.check i{width:18px;height:18px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:11px}
+.check.on i{background:var(--acc);border-color:var(--acc);color:#111}
+.dots{display:flex;gap:6px} .dots span{height:4px;flex:1;border-radius:4px;background:var(--line);transition:.3s}
+.dots span.done{background:var(--acc)} .dots span.cur{background:var(--acc2)}
+.pose{display:grid;grid-template-columns:150px 1fr;gap:20px;align-items:center}
+.fig{width:150px;height:170px;border-radius:18px;background:#0e1013;border:1px solid var(--line);display:grid;place-items:center;font-size:64px}
+.fig svg{width:100%;height:100%}
+.ring{--p:0;width:92px;height:92px;border-radius:50%;display:grid;place-items:center;font:600 13px var(--mono);
+  background:conic-gradient(var(--acc) calc(var(--p)*1turn),var(--line) 0);position:relative;flex:none}
+.ring::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--panel)}
+.ring span{position:relative;z-index:1;text-align:center;line-height:1.2}
+.hint{font:13px var(--mono);color:var(--warn);min-height:20px}
+#twin{height:300px;border-radius:18px;background:#0e1013;border:1px solid var(--line);overflow:hidden;position:relative}
+#twin canvas{display:block}
+#twin .tag{position:absolute;top:10px;left:10px}
+.joints{display:grid;gap:8px}
+.joint{display:grid;grid-template-columns:110px 1fr 58px 36px;align-items:center;gap:10px;font:12px var(--mono);color:var(--dim)}
+.bar{height:8px;background:#0e1013;border:1px solid var(--line);border-radius:6px;position:relative;overflow:hidden}
+.bar b{position:absolute;top:0;bottom:0;width:3px;background:var(--acc);border-radius:2px;transition:left .06s linear}
+.bar s{position:absolute;top:0;bottom:0;width:3px;background:var(--acc2);opacity:.8}
+.flip{font:11px var(--mono);border:1px solid var(--line);border-radius:8px;padding:3px 0;color:var(--dim)}
+.flip.on{color:var(--acc2);border-color:#5ad1ff66}
+.engage{width:100%;padding:20px;font-size:19px;border-radius:18px}
+.engage.on{background:var(--bad);color:#fff;box-shadow:0 0 0 6px #ff5a5a22}
+.tools .btn{padding:10px 14px;font-size:14px;border-radius:12px}
+.tests{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.tests:empty{display:none}
+.test{display:grid;grid-template-columns:18px 1fr;gap:2px 8px;padding:10px;border:1px solid var(--line);border-radius:12px;font:12px var(--mono)}
+.test b{grid-row:span 2} .test span{color:var(--dim)}
+.test.ok{border-color:#c8ff3d55} .test.ok b{color:var(--acc)} .test.bad{border-color:#ff5a5a77} .test.bad b{color:var(--bad)}
+.robotcard{display:flex;gap:16px;align-items:center;padding:18px;border:1px solid var(--line);border-radius:16px}
+.robotcard .big{font-size:40px}
+.small{font-size:13px;color:var(--dim)}
+kbd{font:12px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px}
+@media (max-width:900px){main{grid-template-columns:1fr;padding:0 16px 16px}header{padding:14px 16px}h1{font-size:34px}#stage{min-height:300px}.pose{grid-template-columns:110px 1fr}.fig{width:110px;height:130px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 32 32" fill="none" stroke="#c8ff3d" stroke-width="2.2" stroke-linecap="round"><path d="M4 4h24M10 4v8M22 4v6"/><circle cx="10" cy="15" r="3"/><path d="M10 18l-2 6 6 4M22 10l-3 7 5 5"/></svg>
+    Marionette
+  </div>
+  <div class="pills">
+    <div class="pill" id="pCam"><i></i><span>camera off</span></div>
+    <div class="pill" id="pTrack"><i></i><span>no tracking</span></div>
+    <div class="pill" id="pBot"><i></i><span>bridge…</span></div>
+  </div>
+</header>
+<main>
+  <section class="card" id="stage">
+    <canvas id="view"></canvas>
+    <div class="empty" id="empty"><div><b>Your arm is the controller</b>Turn on your camera to begin</div></div>
+    <div class="banner" id="banner"></div>
+    <div class="hud" id="hud"></div>
+    <video id="video" playsinline muted></video>
+  </section>
+  <section class="card" id="panel"></section>
+</main>
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>
