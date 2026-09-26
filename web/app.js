@@ -350,3 +350,91 @@ states(); pills();
 // Start on our own when the camera is already allowed (no click needed at the demo table).
 if (params.get("video")) $("#start").click();
 else navigator.permissions?.query({ name: "camera" }).then(p => { if (p.state === "granted") $("#start").click() }).catch(() => {});
+
+// ---------- additive UI adapter: snapshots and explicit camera source selection ----------
+// All control, inference, and robot transport above remain unchanged.
+let uiCameraChanging = false;
+const uiCameraBusy = () => S.engaged || ["MIRRORING", "ACQUIRING", "HOLD"].includes(M.state);
+
+export function getUiSnapshot() {
+  const track = S.stream?.getVideoTracks()[0];
+  const active = !!track && track.readyState === "live";
+  return {
+    robot: S.robot, mode: S.mode, engaged: S.engaged, state: M.state,
+    target: { ...S.target }, obs: { ...S.obs },
+    limits: Object.fromEntries(Object.entries(S.limits).map(([joint, range]) => [joint, [...range]])),
+    fps: S.fps,
+    camera: {
+      active, label: track?.label || "", settings: track ? { ...track.getSettings() } : null,
+      changing: uiCameraChanging, recordedVideo: !!params.get("video"),
+    },
+    canSwitchCamera: active && !uiCameraChanging && !uiCameraBusy() && !params.get("video") && $("#gate").hidden,
+  };
+}
+
+export async function switchCamera(deviceId) {
+  if (typeof deviceId !== "string" || !deviceId) throw new Error("Choose an available camera.");
+  if (uiCameraChanging) throw new Error("A camera change is already in progress.");
+  if (uiCameraBusy()) throw new Error("Camera source cannot change while tracking is acquiring, mirroring, or holding. Stop the session first.");
+  const original = S.stream;
+  if (!original?.getVideoTracks().some(track => track.readyState === "live") || params.get("video")) {
+    throw new Error("Start camera to change its source.");
+  }
+  if (!$("#gate").hidden) throw new Error("Wait for the camera and tracker to finish starting.");
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera access is unavailable in this browser.");
+  if (original.getVideoTracks()[0]?.getSettings().deviceId === deviceId) return getUiSnapshot();
+
+  uiCameraChanging = true;
+  let candidate = null, probe = null, installed = false, committed = false;
+  const oldWidth = view.width, oldHeight = view.height;
+  const checkStillIdle = () => {
+    if (S.stream !== original || uiCameraBusy()) throw new Error("The session became active before the camera could change. The current camera was kept.");
+  };
+  const playWithTimeout = async element => {
+    let timer;
+    try {
+      await Promise.race([
+        element.play(),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("The selected camera did not start in time.")), 8000) }),
+      ]);
+    } finally { clearTimeout(timer) }
+  };
+  try {
+    candidate = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } },
+    });
+    checkStillIdle();
+    if (!candidate.getVideoTracks().some(track => track.readyState === "live")) throw new Error("The selected camera has no active video stream.");
+
+    // Validate the new camera away from the existing inference video. If the
+    // operator becomes active during either await, leave their source untouched.
+    probe = document.createElement("video");
+    probe.muted = true; probe.playsInline = true; probe.srcObject = candidate;
+    await playWithTimeout(probe);
+    checkStillIdle();
+
+    video.srcObject = candidate; installed = true;
+    await playWithTimeout(video);
+    checkStillIdle();
+    S.stream = candidate;
+    view.width = video.videoWidth || probe.videoWidth || oldWidth;
+    view.height = video.videoHeight || probe.videoHeight || oldHeight;
+    committed = true;
+    original.getTracks().forEach(track => track.stop());
+    pills();
+  } catch (error) {
+    if (installed) {
+      video.srcObject = original;
+      S.stream = original;
+      view.width = oldWidth; view.height = oldHeight;
+      await video.play().catch(() => {});
+    }
+    throw error;
+  } finally {
+    if (probe) { probe.pause(); probe.srcObject = null }
+    if (candidate && !committed) candidate.getTracks().forEach(track => track.stop());
+    uiCameraChanging = false;
+  }
+  return getUiSnapshot();
+}

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f4f6fb">
+<title>Operator profile · Mimic</title>
+<style>
+:root{color-scheme:light;--bg:#f4f6fb;--panel:#fff;--line:#e5e9f2;--text:#263149;--dim:#65718a;--acc:#5378e5;--link:#3f62c9}
+*{box-sizing:border-box;margin:0}
+body{min-height:100vh;background:var(--bg);color:var(--text);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid var(--acc);outline-offset:4px}
+.skip-link{position:absolute;top:10px;left:20px;z-index:2;padding:10px 16px;border-radius:10px;background:var(--panel);transform:translateY(-150%)}.skip-link:focus{transform:translateY(0)}
+.topbar{background:var(--panel);border-bottom:1px solid var(--line)}
+.topbar-inner{max-width:1120px;min-height:80px;margin:auto;padding:18px 32px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.brand{display:inline-flex;align-items:center;gap:10px;color:var(--text);font-size:18px;font-weight:700;letter-spacing:.08em}.brand::before{content:"";width:12px;height:12px;border-radius:4px;background:var(--acc)}
+.navigation{display:flex;align-items:center;gap:24px;font-size:13px;font-weight:600}.navigation a{padding:8px 0}.navigation [aria-current]{color:var(--text)}
+main{max-width:1120px;margin:auto;padding:44px 32px 48px}
+.back{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:28px}
+.page-heading{margin-bottom:28px}.eyebrow{margin-bottom:8px;color:var(--link);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+h1{font-size:clamp(28px,4vw,36px);font-weight:650;letter-spacing:-.035em;line-height:1.2;margin-bottom:12px}.page-heading p{max-width:620px;color:var(--dim);font-size:14px}
+.profile-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:24px;align-items:start}
+.panel{padding:28px;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:0 3px 14px #26314903}
+.identity{display:flex;align-items:center;gap:17px;padding-bottom:26px;margin-bottom:26px;border-bottom:1px solid var(--line);min-width:0}
+.avatar{flex-shrink:0;display:grid;place-items:center;width:68px;height:68px;border:1px solid #dce5ff;border-radius:22px;background:#eef3ff;color:var(--link);font-size:24px;font-weight:600;letter-spacing:-.04em}
+.identity-copy{min-width:0}.identity h2{font-size:20px;font-weight:650;line-height:1.4;overflow-wrap:anywhere}.local-badge{display:block;margin-top:5px;color:var(--dim);font-size:12px}
+label{display:block;font-size:13px;font-weight:650;margin-bottom:8px}.optional{color:var(--dim);font-size:12px;font-weight:400}
+input{display:block;width:100%;min-height:48px;padding:12px 14px;border:1px solid #d7deec;border-radius:10px;background:#fff;color:var(--text);font:inherit}input::placeholder{color:#788298}input:hover{border-color:#9eadcd}
+.input-help{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-top:8px;color:var(--dim);font-size:12px}.input-help span{white-space:nowrap}
+.form-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin-top:24px}
+button{min-height:44px;border:1px solid transparent;border-radius:10px;padding:10px 17px;font:600 13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer;transition:background .15s,border-color .15s}
+.primary{background:var(--acc);color:#fff}.primary:hover{background:#4265cb}.secondary{background:var(--panel);color:var(--dim);border-color:var(--line)}.secondary:hover{background:var(--bg);border-color:#cad4e7}
+.status{min-height:40px;margin-top:16px;font-size:13px;color:var(--dim)}.status[data-kind="success"]{color:#26714d}.status[data-kind="error"]{color:#a13e36}
+.local-note{border-radius:12px;background:var(--bg);padding:16px 18px;font-size:12px;color:var(--dim)}.local-note strong{display:block;font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.side-panels{display:grid;gap:24px}h2{font-size:15px;font-weight:650;letter-spacing:-.015em}.section-note{color:var(--dim);font-size:12px;margin-top:5px}
+.shortcuts{margin-top:18px}.shortcut{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:14px 0;border-top:1px solid var(--line)}.shortcut:first-child{padding-top:0;border-top:0}.shortcut:last-child{padding-bottom:0}.shortcut dt{font-size:13px;font-weight:600}.shortcut p{font-size:12px;font-weight:400;color:var(--dim);margin-top:2px}.shortcut dd{padding-top:2px;flex-shrink:0}
+kbd{display:inline-flex;align-items:center;justify-content:center;min-width:32px;min-height:28px;border:1px solid #dfe5f0;border-bottom-width:2px;border-radius:7px;background:var(--bg);padding:1px 8px;color:var(--dim);font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.privacy p{font-size:13px;color:var(--dim);margin-top:6px}
+footer{margin-top:30px;color:var(--dim);font-size:12px}
+@media(max-width:740px){.profile-grid{grid-template-columns:minmax(0,1fr)}.topbar-inner{padding:16px 20px;min-height:72px}.navigation{gap:16px;font-size:12px}main{padding:30px 20px 36px}.panel{padding:24px}.page-heading{margin-bottom:24px}.back{margin-bottom:24px}.side-panels{gap:20px}}
+@media(max-width:380px){.topbar-inner{padding-inline:16px;gap:12px}.brand{font-size:16px}.navigation{gap:12px}main{padding-inline:16px}.panel{padding:20px}.identity{gap:13px}.avatar{width:58px;height:58px;border-radius:18px}.identity h2{font-size:18px}.form-actions button{flex:1;padding-inline:10px}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#profile">Skip to profile</a>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="/" aria-label="Mimic live dashboard">MIMIC</a>
+    <nav class="navigation" aria-label="Main navigation">
+      <a href="/">Live</a>
+      <a href="/web/replay.html">Replay</a>
+      <a href="/web/profile.html" aria-current="page">Profile</a>
+    </nav>
+  </div>
+</header>
+<main id="profile" tabindex="-1">
+  <a class="back" href="/"><span aria-hidden="true">←</span> Back to live dashboard</a>
+  <div class="page-heading">
+    <p class="eyebrow">Your workspace</p>
+    <h1>Operator profile</h1>
+    <p>Add a name to make the live dashboard your own. Your profile is saved on this browser.</p>
+  </div>
+  <div class="profile-grid">
+    <section class="panel" aria-labelledby="profile-heading">
+      <div class="identity">
+        <span class="avatar" id="profileAvatar" aria-hidden="true">OP</span>
+        <div class="identity-copy">
+          <h2 id="profile-heading">Operator</h2>
+          <span class="local-badge">Saved on this browser</span>
+        </div>
+      </div>
+      <form id="profileForm">
+        <label for="profileName">Display name <span class="optional">(optional)</span></label>
+        <input id="profileName" name="name" type="text" maxlength="60" autocomplete="nickname" placeholder="Your name" aria-describedby="nameHelp nameCount" disabled>
+        <div class="input-help"><p id="nameHelp">Shown with your initials on the dashboard.</p><span id="nameCount">0 / 60</span></div>
+        <div class="form-actions">
+          <button class="primary" id="saveProfile" type="submit" disabled>Save profile</button>
+          <button class="secondary" id="resetProfile" type="button" disabled>Reset profile</button>
+        </div>
+        <p class="status" id="profileStatus" role="status" aria-live="polite"></p>
+      </form>
+      <noscript><p class="local-note">Enable JavaScript to save a local profile.</p></noscript>
+      <div class="local-note"><strong>A local display name</strong>This is a label for this browser, with no sign-in or account. Resetting removes only your saved profile name.</div>
+    </section>
+    <div class="side-panels">
+      <section class="panel" aria-labelledby="shortcut-heading">
+        <h2 id="shortcut-heading">Live dashboard shortcuts</h2>
+        <p class="section-note">These keys work on the live dashboard.</p>
+        <dl class="shortcuts">
+          <div class="shortcut"><dt>Stop control<p>Release control and return to the home pose.</p></dt><dd><kbd>Esc</kbd></dd></div>
+          <div class="shortcut"><dt>Reset control<p>Return home and start matching your pose again.</p></dt><dd><kbd>R</kbd></dd></div>
+          <div class="shortcut"><dt>Hold to talk<p>Hold while speaking a robot command.</p></dt><dd><kbd>G</kbd></dd></div>
+          <div class="shortcut"><dt>Mute / unmute<p>Toggle spoken robot feedback.</p></dt><dd><kbd>M</kbd></dd></div>
+        </dl>
+      </section>
+      <section class="panel privacy" aria-labelledby="privacy-heading">
+        <div><h2 id="privacy-heading">Your video stays on this device</h2><p>The live dashboard processes camera video on this device to track your pose and hand movement.</p></div>
+      </section>
+    </div>
+  </div>
+  <footer>Mimic · Your movement, mirrored.</footer>
+</main>
+<script src="/web/profile.js" defer></script>
+<script src="/web/ui-navigation.js" defer></script>
+</body>
+</html>

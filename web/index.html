@@ -3,129 +3,128 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Marionette</title>
+<meta name="theme-color" content="#f4f6fb">
+<title>Mimic · Live control</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
 <script type="importmap">
 {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
 "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}
 </script>
-<style>
-:root{
-  --bg:#0b0c0e; --panel:#131519; --line:#23262d; --text:#eceae4; --dim:#8a8d94;
-  --acc:#c8ff3d; --acc2:#5ad1ff; --warn:#ffb13d; --bad:#ff5a5a;
-  --r:18px; --mono:'JetBrains Mono',ui-monospace,monospace;
-}
-*{box-sizing:border-box;margin:0}
-html,body{height:100%}
-body{background:var(--bg);color:var(--text);font:16px/1.45 'Space Grotesk',system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden}
-header{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:6px}
-.brand{font-weight:700;letter-spacing:.14em;font-size:14px}
-.brand i{color:var(--acc);font-style:normal}
-.grow{flex:1}
-.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line);border-radius:99px;font:12px var(--mono);color:var(--dim);white-space:nowrap}
-.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--dim)}
-.pill.ok::before{background:var(--acc)} .pill.warn::before{background:var(--warn)} .pill.bad::before{background:var(--bad)}
-button.pill{background:none;cursor:pointer}
-main{flex:1;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px;padding:14px;min-height:0}
-.cam{position:relative;border-radius:var(--r);overflow:hidden;background:#000;min-height:0}
-#view{width:100%;height:100%;object-fit:contain;display:block}
-#video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:0;opacity:0;pointer-events:none}
-#view{position:relative;z-index:1}
-.caption,.meter,.gate{z-index:2} [hidden]{display:none!important}
-.caption{position:absolute;left:0;right:0;top:0;padding:22px 26px 40px;font-size:clamp(20px,2.6vw,34px);font-weight:700;line-height:1.15;
-  background:linear-gradient(#000c,#0000);text-shadow:0 2px 12px #000;transition:color .2s}
-.caption small{display:block;font:500 13px var(--mono);color:var(--dim);letter-spacing:.12em;margin-bottom:6px;text-transform:uppercase}
-.caption.live{color:var(--acc)} .caption.warn{color:var(--warn)}
-.meter{position:absolute;right:16px;top:50%;transform:translateY(-50%);width:14px;height:44%;border-radius:8px;background:#ffffff14;border:1px solid #ffffff22}
-.meter .band{position:absolute;left:-1px;right:-1px;top:27%;height:34%;border:1px solid var(--acc);border-radius:6px;background:#c8ff3d18}
-.meter b{position:absolute;left:-5px;right:-5px;height:4px;border-radius:3px;background:#fff;transition:top .15s}
-.meter span{position:absolute;right:22px;font:11px var(--mono);color:var(--dim);white-space:nowrap}
-.gate{position:absolute;inset:0;display:grid;place-items:center;text-align:center;background:#0b0c0ee6;padding:24px}
-.gate h1{font-size:clamp(28px,4vw,52px);line-height:1.05;margin-bottom:12px}
-.gate p{color:var(--dim);max-width:520px;margin:0 auto 20px}
-.btn{font:600 15px 'Space Grotesk',sans-serif;padding:12px 20px;border-radius:12px;border:0;background:var(--acc);color:#0b0c0e;cursor:pointer}
-.btn.ghost{background:none;border:1px solid var(--line);color:var(--text)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.side{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px}
-#twin{position:relative;height:clamp(220px,38vh,420px);border-radius:14px;overflow:hidden;transition:box-shadow .3s}
-#twin.live{box-shadow:0 0 0 2px var(--acc),0 0 40px #c8ff3d44}
-#twin canvas{display:block}
-.tag{position:absolute;left:10px;top:10px;font:11px var(--mono);color:var(--dim);letter-spacing:.08em;text-transform:uppercase}
-.state{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.state span{font:11px var(--mono);padding:4px 8px;border-radius:6px;color:var(--dim);border:1px solid var(--line)}
-.state span.on{color:#0b0c0e;background:var(--acc);border-color:var(--acc)}
-.joints{display:grid;gap:7px;margin-top:4px}
-.joint{display:grid;grid-template-columns:62px 1fr 46px;gap:8px;align-items:center;font:12px var(--mono);color:var(--dim)}
-.bar{position:relative;height:6px;border-radius:4px;background:#ffffff10}
-.bar s,.bar b{position:absolute;top:-3px;width:3px;height:12px;border-radius:2px;margin-left:-1px}
-.bar s{background:var(--acc2)} .bar b{background:var(--acc)}
-.cmd{display:flex;gap:8px}
-.cmd input{flex:1;min-width:0;background:#0b0c0e;border:1px solid var(--line);border-radius:10px;color:var(--text);padding:10px 12px;font:14px 'Space Grotesk',sans-serif}
-.cmd .btn{padding:10px 14px}
-.chat{font-size:14px;color:var(--dim);margin-top:8px;min-height:20px}
-.chat b{color:var(--text);font-weight:500}
-h3{font:600 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:10px}
-details summary{cursor:pointer;font:600 12px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
-.tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.tools .btn{padding:8px 12px;font-size:13px}
-.flips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.flips label{font:12px var(--mono);color:var(--dim);display:flex;gap:4px;align-items:center}
-.msg{font-size:13px;color:var(--dim);margin-top:8px}
-footer{display:flex;gap:16px;padding:8px 18px;border-top:1px solid var(--line);font:12px var(--mono);color:var(--dim);flex-wrap:wrap}
-kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:var(--text)}
-body.demo header .dbg,body.demo #debug{display:none}
-@media (max-width:860px){main{grid-template-columns:1fr;overflow:auto}.cam{min-height:56vh}}
-@media (prefers-reduced-motion:reduce){*{transition:none!important}}
-</style>
+<link rel="stylesheet" href="/web/ui.css">
 </head>
 <body>
-<header>
-  <div class="brand">MARIONETTE<i>·</i>LIVE</div>
-  <span class="grow"></span>
-  <span class="pill" id="pCam"><span>camera</span></span>
-  <span class="pill" id="pTrack"><span>tracking</span></span>
-  <span class="pill" id="pBot"><span>robot</span></span>
-  <button class="pill" id="pVoice" title="Voice (M)"><span>voice</span></button>
-</header>
-<main>
-  <section class="cam">
-    <canvas id="view" width="1280" height="720" aria-label="Camera with tracked skeleton"></canvas>
-    <video id="video" playsinline muted></video>
-    <div class="caption" id="caption" role="status" aria-live="polite"><small id="stateName">starting</small><span id="capText">Waking up…</span></div>
-    <div class="meter" id="meter" hidden><div class="band"></div><b id="meterDot"></b><span style="top:-18px">close</span><span style="bottom:-18px">far</span></div>
-    <div class="gate" id="gate">
-      <div><h1>Your arm is the controller.</h1>
-      <p>Stand in front of the camera and copy the robot's pose. No calibration, no setup. Video never leaves this laptop.</p>
-      <button class="btn" id="start">Start camera</button></div>
+<a class="skip-link" href="#workspace">Skip to live controls</a>
+<aside class="rail" aria-label="Main navigation">
+  <a class="brand-mark" href="/" aria-label="Mimic home">m</a>
+  <nav>
+    <a class="nav-item active" href="/" aria-current="page"><span class="nav-number" aria-hidden="true">01</span><span>Live</span></a>
+    <a class="nav-item" href="/web/replay.html"><span class="nav-number" aria-hidden="true">02</span><span>Replay</span></a>
+    <a class="nav-item" href="#debug" id="toolsLink"><span class="nav-number" aria-hidden="true">03</span><span>Tools</span></a>
+  </nav>
+  <span class="rail-label">SO–101</span>
+</aside>
+<div class="app-shell">
+  <header class="topbar">
+    <a class="wordmark" href="/">Mimic<span>Live workspace</span></a>
+    <div class="status-bar" aria-label="System status">
+      <button class="source-control" id="cameraSettingsButton" type="button" aria-haspopup="dialog" aria-label="Camera source and settings"><span class="source-label">Source: <strong id="uiCamName">Camera</strong></span><span class="pill" id="pCam"><span>camera off</span></span><span aria-hidden="true">⌄</span></button>
+      <span class="pill" id="pBot"><span>connecting…</span></span>
+      <span class="sync-pill" id="uiSyncStatus" title="Compares measured robot joints with their targets during live mirroring">Sync: waiting</span>
+      <button class="pill" id="pVoice" type="button" title="Toggle voice (M)"><span>voice</span></button>
+      <a class="profile-link" href="/web/profile.html" aria-label="Local operator profile" title="Local operator profile"><span id="uiAvatar">OP</span></a>
     </div>
-  </section>
-  <section class="side">
-    <div class="card">
-      <div id="twin"><span class="tag" id="twinLabel">twin</span></div>
-      <div class="state" id="states"></div>
+  </header>
+  <main id="workspace" tabindex="-1">
+    <div class="workspace-heading">
+      <div><p class="eyebrow">Human motion. Robot precision.</p><h1>Live control</h1></div>
+      <span class="workspace-note">Your movement, mirrored.</span>
     </div>
-    <div class="card">
-      <h3>Ask the robot · Gemini</h3>
-      <div class="cmd"><input id="cmdText" placeholder="Try “wave”, “take a bow”, “dance”" aria-label="Command"><button class="btn" id="cmdGo">Send</button></div>
-      <div class="chat" id="chat">Hold <kbd>G</kbd> and speak, or type.</div>
+    <div class="stage-grid">
+      <section class="panel camera-panel" aria-labelledby="camera-title">
+        <div class="panel-heading"><h2 id="camera-title">Live camera feed</h2><span class="pill compact" id="pTrack"><span>no one in view</span></span></div>
+        <div class="cam">
+          <canvas id="view" width="1280" height="720" aria-label="Camera with tracked skeleton"></canvas>
+          <video id="video" playsinline muted></video>
+          <div class="caption" id="caption" role="status" aria-live="polite"><small id="stateName">starting</small><span id="capText">Waking up…</span></div>
+          <div class="meter" id="meter" hidden><div class="band"></div><b id="meterDot"></b><span style="top:-18px">close</span><span style="bottom:-18px">far</span></div>
+          <div class="gate" id="gate">
+            <div><span class="gate-label">Ready when you are</span><h2>Your arm is<br>the controller.</h2>
+            <p>Start your camera, then copy the robot’s pose. Your video stays on this laptop.</p>
+            <button class="btn" id="start" type="button">Start camera <span aria-hidden="true">↗</span></button>
+            <span class="gate-note">No calibration. Just you and your robot.</span></div>
+          </div>
+        </div>
+        <div class="panel-foot"><span>Pose + hand tracking</span><span>Video stays on this device</span></div>
+      </section>
+      <section class="panel twin-panel" aria-labelledby="twin-title">
+        <div class="panel-heading"><h2 id="twin-title">Digital twin</h2><span class="model-label">SO–101</span></div>
+        <div id="twin"><span class="tag" id="twinLabel">twin · target</span></div>
+        <div class="panel-foot"><span>Six degrees of movement</span><span>Drag to orbit</span></div>
+      </section>
     </div>
-    <details class="card" id="debug">
-      <summary>Joints &amp; robot tools</summary>
-      <div class="joints" id="joints"></div>
-      <div class="flips" id="flips"></div>
-      <div class="tools">
-        <button class="btn ghost" id="home">⌂ Goalpost pose</button>
-        <button class="btn ghost" id="test">Test joints</button>
-        <button class="btn ghost" id="limp">✋ Pose by hand</button>
-        <button class="btn" id="saveReady" hidden>Save as goalpost</button>
+    <div class="insight-grid">
+      <section class="panel control-panel" aria-labelledby="control-title">
+        <div class="panel-heading"><h2 id="control-title">Current gesture</h2><span class="section-label">Live control</span></div>
+        <p class="state-readout" id="uiState">Starting</p>
+        <p class="muted" id="uiGestureDetail">Copy the pose to begin mirroring.</p>
+        <div class="state" id="states" aria-label="Mirroring state"></div>
+      </section>
+      <section class="panel mapping-panel" aria-labelledby="mapping-title">
+        <div class="panel-heading"><h2 id="mapping-title">Control mapping</h2><span class="section-label">Your movement</span></div>
+        <dl class="mapping-grid">
+          <div><dt>Arm</dt><dd>Base, shoulder<br>and elbow</dd></div>
+          <div><dt>Wrist</dt><dd>Wrist angle<br>and rotation</dd></div>
+          <div><dt>Hand</dt><dd>Gripper<br>open / close</dd></div>
+        </dl>
+      </section>
+      <section class="panel performance-panel" aria-labelledby="performance-title">
+        <div class="panel-heading"><h2 id="performance-title">Performance telemetry</h2></div>
+        <div class="performance-row">
+          <div class="metric-cell" title="Estimated agreement between target and measured joint positions, normalized by each joint’s calibrated range"><span class="metric-label">Sync quality</span><p class="metric"><span id="uiSync">—</span><small>%</small></p><canvas class="sparkline" id="syncTrend" width="160" height="35" aria-label="Recent sync quality trend"></canvas></div>
+          <div class="metric-cell" title="The current robot bridge does not report end-to-end latency"><span class="metric-label">Latency</span><p class="metric"><span>—</span><small>ms</small></p><span class="not-reported">Not reported</span></div>
+          <div class="metric-cell"><span class="metric-label">FPS</span><p class="metric"><span id="uiFps">—</span></p><canvas class="sparkline" id="fpsTrend" width="160" height="35" aria-label="Recent camera frame rate trend"></canvas></div>
+        </div>
+        <p class="metric-note" id="uiTracking">Waiting for camera</p>
+      </section>
+    </div>
+    <div class="control-actions" aria-label="Control actions">
+      <button class="action-button reset-button" id="uiReset" type="button" disabled><kbd>R</kbd><span><strong>Reset control</strong><small>Return home and start matching again</small></span></button>
+      <button class="action-button stop-button" id="uiStop" type="button" disabled><kbd>Esc</kbd><span><strong>Stop control</strong><small>Release control and return to the home pose</small></span></button>
+    </div>
+    <div class="support-grid">
+      <section class="panel command-panel" aria-labelledby="command-title">
+        <div class="panel-heading"><h2 id="command-title">Ask the robot</h2><span class="section-label">Gemini</span></div>
+        <div class="cmd"><input id="cmdText" placeholder="Try “wave”, “take a bow”, “dance”" aria-label="Command"><button class="btn" id="cmdGo" type="button">Send</button></div>
+        <div class="chat" id="chat" role="status" aria-live="polite">Hold <kbd>G</kbd> and speak, or type a command.</div>
+      </section>
+      <section class="panel feedback-panel" aria-labelledby="feedback-title">
+        <div class="panel-heading"><h2 id="feedback-title">Robot feedback</h2><span class="section-label">Connection</span></div>
+        <span id="fps" role="status" aria-live="polite"></span>
+        <p class="muted feedback-note">Connection details and robot messages appear here.</p>
+      </section>
+    </div>
+    <details class="panel" id="debug">
+      <summary>Joints &amp; robot tools <span>Position, direction and setup</span></summary>
+      <div class="debug-content">
+        <div><div class="joint-key"><span>Joint positions</span><span><i class="target-key"></i> Target <i class="measured-key"></i> Measured</span></div><div class="joints" id="joints"></div></div>
+        <div><h3>Robot setup</h3><div class="flips" id="flips"></div>
+          <div class="tools">
+            <button class="btn ghost" id="home" type="button" disabled>⌂ Goalpost pose</button>
+            <button class="btn ghost" id="test" type="button" disabled>Test joints</button>
+            <button class="btn ghost" id="limp" type="button" disabled>✋ Pose by hand</button>
+            <button class="btn" id="saveReady" type="button" hidden>Save as goalpost</button>
+          </div>
+          <div class="msg" id="botMsg"></div>
+        </div>
       </div>
-      <div class="msg" id="botMsg"></div>
     </details>
-  </section>
-</main>
-<footer><span><kbd>Esc</kbd> stop</span><span><kbd>G</kbd> talk</span><span><kbd>M</kbd> mute</span><span><kbd>R</kbd> reset</span><span class="grow"></span><span id="fps"></span><a href="/web/replay.html" style="color:inherit">replay ↗</a></footer>
+  </main>
+  <footer><span>Mimic <span class="footer-divider">/</span> SO–101 control workspace</span><div class="shortcuts"><span><kbd>Esc</kbd> stop</span><span><kbd>G</kbd> talk</span><span><kbd>M</kbd> mute</span><span><kbd>R</kbd> reset</span></div></footer>
+</div>
 <script type="module" src="/web/app.js"></script>
+<script type="module" src="/web/ui.js"></script>
+<script src="/web/ui-navigation.js" defer></script>
 </body>
 </html>
