@@ -6,7 +6,7 @@ import { JOINTS, armAngles, circular, clamp, mapMatchedPose, validReference, wra
 const $ = s => document.querySelector(s);
 const panel = $("#panel"), view = $("#view"), ctx = view.getContext("2d"), video = $("#video");
 const LABEL = { shoulder_pan: "base", shoulder_lift: "shoulder", elbow_flex: "elbow", wrist_flex: "wrist", wrist_roll: "roll", gripper: "gripper" };
-const IDX = { right: [12, 14, 16], left: [11, 13, 15] };
+const RIGHT = [12, 14, 16];
 const TOL = { lift: 7, elbow: 8, pan: 8, wrist: 10, grip: 0.12, roll: 14 };
 const HOLD = 1100;
 
@@ -17,7 +17,7 @@ const SIM_POSE = { shoulder_pan: 0, shoulder_lift: 0, elbow_flex: 0, wrist_flex:
 const SIM_LIMITS = Object.fromEntries(JOINTS.map(j => [j, j === "gripper" ? [0, 100] : [-90, 90]]));
 
 const S = {
-  arm: load("arm", "right"), calib: validReference(savedReference) ? savedReference : null,
+  arm: "right", calib: validReference(savedReference) ? savedReference : null,
   flip: load("matchedFlip-v1", {}), draft: {},
   fs: null, raw: null, tracking: false, lastSeen: -1e9, fps: 0,
   robot: "offline", msg: "Looking for the bridge…", engaged: false, limits: {}, obs: {}, target: {},
@@ -56,9 +56,9 @@ async function startCamera(deviceId) {
 
 function features(pr, hr) {
   if (!pr.landmarks?.length) return null;
-  const [s, e, w] = IDX[S.arm], L = pr.landmarks[0], W = pr.worldLandmarks[0];
+  const [s, e, w] = RIGHT, L = pr.landmarks[0], W = pr.worldLandmarks[0];
   const px = p => [p.x * view.width, p.y * view.height];
-  const f = armAngles(W, S.arm);
+  const f = armAngles(W);
   if (!f) return null;
   const vis = Math.min(L[11].visibility, L[12].visibility, L[e].visibility, L[w].visibility);
   let H = null, best = 0.15;   // the hand whose wrist sits on this arm's wrist
@@ -182,8 +182,7 @@ const send = m => ws?.readyState === 1 && ws.send(JSON.stringify(m));
 const fig = (e, w, h) => {
   const sx = 95, sy = 60, k = 0.6, E = [sx + e[0] * k, sy + e[1] * k], W = [sx + w[0] * k, sy + w[1] * k];
   const Hd = h ? [sx + h[0] * k, sy + h[1] * k] : null;
-  const flip = S.arm === "left" ? 'transform="translate(150 0) scale(-1 1)"' : "";
-  return `<svg viewBox="0 0 150 170"><g ${flip} fill="none" stroke-linecap="round" stroke-linejoin="round">
+  return `<svg viewBox="0 0 150 170"><g fill="none" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="75" cy="30" r="13" stroke="#8a8d94" stroke-width="4"/>
     <path d="M75 46V110M55 60H95M55 60L50 102L48 138M75 110L62 160M75 110L88 160" stroke="#4a4e57" stroke-width="5"/>
     <path d="M${sx} ${sy}L${E}L${W}${Hd ? "L" + Hd : ""}" stroke="#c8ff3d" stroke-width="7" style="filter:drop-shadow(0 0 6px #c8ff3d88)"/>
@@ -204,7 +203,7 @@ function stepTick(now) {
   if (!st || capturing) return;
   const raw = S.raw?.f;
   let hint = "";
-  if (!raw) { hint = "Show both shoulders, your elbow, wrist and hand."; hold = 0; samples = [] }
+  if (!raw) { hint = "Show both shoulders, your right elbow, wrist and hand."; hold = 0; samples = [] }
   else if (st.cap.some(k => !Number.isFinite(raw[k]))) { hint = "Keep your upper arm out from your body and your hand visible."; hold = 0; samples = [] }
   else {
     samples.push({ t: now, f: raw }); samples = samples.filter(s => now - s.t < 600);
@@ -266,14 +265,14 @@ async function capture(st) {
 function matchProblem() {
   if (!validReference(S.calib)) return "Capture a matching pose first";
   if (!S.calib.physical) return "This is a preview match. Capture a new match with the robot connected";
-  if (S.calib.arm !== S.arm || S.calib.cameraId !== S.cameraId) return "Camera or arm changed. Capture a new match";
+  if (S.calib.arm !== "right" || S.calib.cameraId !== S.cameraId) return "Camera changed. Capture a new match";
   if (S.calib.calibrationId !== S.calibrationId) return "Robot calibration changed. Capture a new match";
   return "";
 }
 
 function camChecks() {
   const r = S.raw, set = (id, on) => $(id)?.classList.toggle("on", !!on);
-  const L = r?.L, [s, e, w] = IDX[S.arm];
+  const L = r?.L, [s, e, w] = RIGHT;
   set("#cS", L && L[s].visibility > 0.6); set("#cE", L && L[e].visibility > 0.6);
   set("#cW", L && L[w].visibility > 0.6); set("#cH", r?.H);
   const b = $("#next"); if (b) b.disabled = !(r && r.H && r.vis > 0.6);
@@ -284,7 +283,7 @@ function render() {
   if (s === "intro") {
     panel.innerHTML = `
       <div class="kicker">SO-101 · camera teleop</div>
-      <h1>Move your arm.<br>The robot moves with you.</h1>
+      <h1>Move your right arm.<br>The robot moves with you.</h1>
       <p class="lead">Match one pose with the robot. From there, each degree you move changes its matching joint by one degree, within the arm's limits.</p>
       <div class="row"><button class="btn" id="go">Turn on camera →</button>${S.calib ? `<button class="btn ghost" id="skip">Use my last match</button>` : ""}</div>
       <p class="small">Video never leaves this device. Only joint angles go to the robot.</p>`;
@@ -293,21 +292,18 @@ function render() {
   } else if (s === "camera") {
     panel.innerHTML = `
       <div class="kicker">Step 1 of 3 · Camera</div>
-      <h2>Get your arm in the frame</h2>
-      <p class="lead">Keep both shoulders and your controlling elbow, wrist and hand in view. Keep the camera in the same position after matching.</p>
+      <h2>Get your right arm in the frame</h2>
+      <p class="lead">Keep both shoulders and your right elbow, wrist and hand in view. The left arm is ignored. Keep the camera in the same position after matching.</p>
       <select id="cams"></select>
-      <div class="row"><span class="small grow">Which arm is the controller?</span>
-        <div class="seg"><button data-a="left" class="${S.arm === "left" ? "on" : ""}">Left</button><button data-a="right" class="${S.arm === "right" ? "on" : ""}">Right</button></div></div>
       <div class="checks">
-        <div class="check" id="cS"><i>✓</i>Shoulder</div><div class="check" id="cE"><i>✓</i>Elbow</div>
-        <div class="check" id="cW"><i>✓</i>Wrist</div><div class="check" id="cH"><i>✓</i>Hand</div></div>
+        <div class="check" id="cS"><i>✓</i>Right shoulder</div><div class="check" id="cE"><i>✓</i>Right elbow</div>
+        <div class="check" id="cW"><i>✓</i>Right wrist</div><div class="check" id="cH"><i>✓</i>Right hand</div></div>
       <button class="btn" id="next" disabled>Set up the robot →</button>`;
     navigator.mediaDevices.enumerateDevices().then(ds => {
       const cur = S.stream?.getVideoTracks()[0]?.getSettings().deviceId;
       $("#cams").innerHTML = ds.filter(d => d.kind === "videoinput").map((d, n) => `<option value="${d.deviceId}" ${d.deviceId === cur ? "selected" : ""}>${d.label || "Camera " + (n + 1)}</option>`).join("");
     });
     $("#cams").onchange = e => startCamera(e.target.value);
-    panel.querySelectorAll(".seg button").forEach(b => b.onclick = () => { S.arm = b.dataset.a; save("arm", S.arm); S.calib = null; S.fs = null; S.raw = null; render(); pills() });
     $("#next").onclick = () => { S.draft = {}; S.calib = null; go("robot") };
   } else if (i >= 0) {
     const st = STEPS[i];
@@ -362,7 +358,7 @@ function toggleEngage() {
   if (S.robot !== "live") return banner("Connect the arm first. The twin already follows you.", true, 2000);
   if (!S.engaged && BUSY[S.mode]) return banner(BUSY[S.mode], true, 2000);
   if (!S.engaged && matchProblem()) return banner(matchProblem(), true, 4000);
-  if (!S.engaged && (!S.raw || performance.now() - S.lastSeen > 150)) return banner("Get your arm and hand in view first", true);
+  if (!S.engaged && (!S.raw || performance.now() - S.lastSeen > 150)) return banner("Get your right arm and hand in view first", true);
   if (!S.engaged) send({ type: "target", joints: S.target });
   send({ type: "engage", on: !S.engaged });
 }

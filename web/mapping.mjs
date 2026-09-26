@@ -12,8 +12,8 @@ const dot = (a, b) => a.reduce((sum, x, i) => sum + x * b[i], 0);
 const length = a => Math.hypot(...a);
 const angle = (a, b) => Math.acos(clamp(dot(a, b) / (length(a) * length(b)), -1, 1)) * 180 / Math.PI;
 
-export function armAngles(world, arm) {
-  const [s, e, w] = arm === "left" ? [11, 13, 15] : [12, 14, 16];
+export function armAngles(world) {
+  const [s, e, w] = [12, 14, 16];
   if (![s, e, w, 11, 12].every(i => world?.[i] && ["x", "y", "z"].every(k => finite(world[i][k])))) return null;
   const upper = sub(world[e], world[s]), fore = sub(world[w], world[e]);
   if (length(upper) < 0.03 || length(fore) < 0.03) return null;
@@ -31,7 +31,7 @@ export function armAngles(world, arm) {
 }
 
 export function validReference(c) {
-  return c?.version === 1 && ["left", "right"].includes(c.arm)
+  return c?.version === 1 && c.arm === "right"
     && [true, false].includes(c.physical)
     && Object.values(FEATURES).every(k => finite(c.humanZero?.[k]))
     && finite(c.humanZero?.grip)
