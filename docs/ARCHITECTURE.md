@@ -20,7 +20,7 @@ flowchart LR
     CMD[command.js<br/>hold G: speech to text] --> SM
   end
   SM <-- WebSocket /ws --> BR
-  subgraph Laptop["bridge.py (local, holds the keys)"]
+  subgraph Laptop["serve.py (local, holds the keys)"]
     BR[loop 30 Hz<br/>speed caps, limits, dead-man] --> ROBOT[SO-101 via LeRobot]
     BR --> TQ[telemetry queue] --> TIGER[(Tiger Data<br/>hypertable)]
     BR --> GEM[/api/gemini/] --> GAPI[Gemini API]
@@ -29,7 +29,7 @@ flowchart LR
   BR -. state only, 10 Hz .-> VULTR[Vultr relay<br/>marionette.tech spectator twin]
 ```
 
-Rule: **nothing from the cloud can move the robot.** All API keys live in `marionette/.env`, which is gitignored and read only by the bridge. The spectator relay can receive state but can't send anything back.
+Rule: **nothing from the cloud can move the robot.** All API keys live in `.env` (repo root), which is gitignored and read only by `serve.py`. The spectator relay can receive state but can't send anything back.
 
 ## Motion core: why no calibration
 
@@ -37,7 +37,7 @@ Rule: **nothing from the cloud can move the robot.** All API keys live in `mario
   - **Human side:** fixed anatomical numbers (`lift 0` = arm out sideways, `elbow 90`, `pan 0`).
   - **Robot side:** the saved ready pose. Set it once, today, with **Pose by hand**, then **Save as ready**.
 - **Captured at lock time:** wrist, roll and grip-open are the noisy ones. We record them during the 1 s lock hold, which the person is doing anyway, so it's still zero clicks.
-- **Hinge angles are measured in the image,** in a body frame built from the shoulder line.
+- **Hinge angles are measured in the image** (`web/angles.mjs`), in a body frame built from the shoulder line.
   - This works because the hinges' rotation axes point at the camera in this pose.
   - The angles don't change with distance or with where you stand, so the robot "adjusts to you" without rescaling.
 - **Pan (base)** uses MediaPipe depth. It gets extra smoothing and a ±5° dead zone. It's the noisiest joint.
@@ -105,22 +105,17 @@ Rule: **nothing from the cloud can move the robot.** All API keys live in `mario
 
 ## Files
 
-- **New in `marionette/web/`:**
+- **In `web/`:**
   - `mirror.mjs`: state machine.
-  - `angles.mjs`: image-plane angles and pan.
+  - `angles.mjs`: image-plane angles, pan, and the framing checks.
   - `filters.mjs`: One Euro filter and confidence.
-  - `framing.mjs`: the framing checks.
-  - `overlay.js`: silhouette, meter, ring.
   - `voice.js`: clip queue and cooldowns.
   - `command.js`: speech → Gemini → gesture.
-  - `replay.html`
-- **Other new files:** `tools/gen_voice.py`, `web/voice/*.mp3`, `marionette/telemetry.py`.
-- **Changed:**
-  - `app.js`: `frame()` calls `mirror.tick`. The Sync wizard is removed, and the flips move to a debug panel.
   - `mapping.mjs`: fixed anatomical reference.
-  - `bridge.py`: dead-man, auto-home, `blend_s`, `/api/gemini`, `/api/tts`, telemetry queue.
-  - `index.html`: rewritten as the two-panel stage.
-  - `requirements.txt`: add python-dotenv, google-genai, elevenlabs, asyncpg.
+  - `app.js`: `frame()` calls `mirror.tick`.
+  - `index.html`: two-panel stage.
+  - `replay.html`
+- **At the repo root:** `serve.py` (site + WebSocket bridge: dead-man, auto-home, `blend_s`, `/api/gemini`, `/api/tts`, telemetry queue), `sponsors.py` (Gemini + ElevenLabs), `telemetry.py`, `requirements.txt` (aiohttp, plus optional asyncpg for Tiger Data).
 
 ## 6-hour plan (3 lanes)
 

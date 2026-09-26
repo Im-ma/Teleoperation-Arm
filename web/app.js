@@ -9,6 +9,7 @@ import { FeatureFilter } from "./filters.mjs";
 import { createMirror } from "./mirror.mjs";
 import { LINES, createVoice } from "./voice.js";
 import { createCommands } from "./command.js";
+import { createRobot } from "./robot.mjs";
 
 const $ = s => document.querySelector(s);
 const view = $("#view"), ctx = view.getContext("2d"), video = $("#video");
@@ -16,6 +17,7 @@ const params = new URLSearchParams(location.search);
 const LABEL = { shoulder_pan: "base", shoulder_lift: "shoulder", elbow_flex: "elbow", wrist_flex: "wrist", wrist_roll: "roll", gripper: "grip" };
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} };
+const finiteJoints = j => Object.fromEntries(Object.entries(j).filter(([, v]) => Number.isFinite(v)));
 
 // Twin-only goalpost (no robot): upper link out, forearm up, gripper back across.
 const SIM_READY = { shoulder_pan: 0, shoulder_lift: -90, elbow_flex: 0, wrist_flex: 90, wrist_roll: 0, gripper: 60 };
@@ -67,7 +69,7 @@ let pose, hands;
 async function initVision() {
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm");
   const mk = (C, file, extra = {}) => C.createFromOptions(fs, { baseOptions: { modelAssetPath: `/models/${file}`, delegate: "GPU" }, runningMode: "VIDEO", ...extra });
-  [pose, hands] = await Promise.all([mk(PoseLandmarker, "pose_landmarker_full.task"), mk(HandLandmarker, "hand_landmarker.task", { numHands: 2 })]);
+  [pose, hands] = await Promise.all([mk(PoseLandmarker, "pose_landmarker_full.task", { minPoseDetectionConfidence: 0.3, minPosePresenceConfidence: 0.3, minTrackingConfidence: 0.3 }), mk(HandLandmarker, "hand_landmarker.task", { numHands: 2, minHandDetectionConfidence: 0.3, minHandPresenceConfidence: 0.3, minTrackingConfidence: 0.3 })]);
 }
 
 async function startCamera() {
@@ -96,9 +98,17 @@ $("#start").onclick = () => { unlockAudio(); startCamera().catch(e => { $("#gate
 
 // ---------- main loop ----------
 let lastT = -1, fpsT = 0, fpsN = 0, lastSend = 0, lastR = null, lastOut = { state: "BOOT" };
-let rafPending = false, lastTs = 0;
+let rafPending = false, lastTs = 0, wasHidden = false;
 function frame(now) {
   if (!rafPending) { rafPending = true; requestAnimationFrame(t => { rafPending = false; frame(t) }) }
+  // Backgrounded tab: some browsers keep an active camera stream running near full rate,
+  // so don't rely on rAF throttling alone. Stop sending targets and let go of the robot.
+  // The recorded-clip path (?video=) is exempt: it's used for headless tracking tests.
+  if (document.hidden && !params.get("video")) {
+    if (!wasHidden) { wasHidden = true; send({ type: "engage", on: false }) }
+    return;
+  }
+  wasHidden = false;
   if (video.readyState < 2 || video.currentTime === lastT) return;
   lastT = video.currentTime;
   const w = view.width, h = view.height;
@@ -117,10 +127,13 @@ function frame(now) {
   const fs = r ? filt.update(r.f, r.conf, now / 1000) : null;
   if (fs) { S.hist.push({ t: now, f: { ...fs } }); while (S.hist.length && now - S.hist[0].t > 700) S.hist.shift() }
 
+  // Hand not seen yet at lock: take its zero from the first good reading instead of a guess.
+  if (S.ref?.lazy && fs) for (const k in S.ref.lazy) if (Number.isFinite(fs[k])) { S.ref.humanZero[k] = fs[k]; delete S.ref.lazy[k] }
   const fr = r && framing(r, w, h);
-  const person = r && { arm: r.arm, core: r.conf.lift >= 0.6 && r.conf.elbow >= 0.6, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
+  const person = r && { arm: r.arm, core: r.conf.lift >= 0.35 && r.conf.elbow >= 0.35, score: goalpostScore(r), framing: fr, id: { cx: r.F.mid[0] / w, sw: r.F.sw / w } };
   const out = M.tick({ now, live: live(), engaged: S.engaged, robotReady: !live() || S.mode === "idle", person });
-  for (const a of out.actions) act(a, fs, now);
+  const fromHold = out.actions.includes("reset");   // HOLD → MIRRORING: welcome back, blend in gently
+  for (const a of out.actions) act(a, fs, now, fromHold);
   if (out.say) { if (out.say === "hello") voice.newPerson(); voice.say(out.say) }
   if (M.state !== "MIRRORING" && M.state !== "HOLD" && now > twinGestureUntil) S.target = { ...robotZero() };
 
@@ -133,21 +146,23 @@ function frame(now) {
 }
 let lastState = "";
 
-function act(a, fs, now) {
+function act(a, fs, now, fromHold) {
   if (a === "lock") {
     const med = k => { const v = S.hist.map(s => s.f[k]).filter(Number.isFinite).sort((x, y) => x - y); return v.length ? v[v.length >> 1] : undefined };
     S.ref = {
       version: 1, arm: M.arm, physical: live(), robotZero: { ...robotZero() }, pinch: 0.12,
+      lazy: Object.fromEntries(["wrist", "roll"].filter(k => med(k) === undefined).map(k => [k, 1])),
       humanZero: { ...GOALPOST, wrist: med("wrist") ?? 90, roll: med("roll") ?? 0, grip: Math.max(0.35, med("grip") ?? 0.8) },
     };
     S.target = { ...S.ref.robotZero };
   } else if (a === "engage") {
     if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip) };
-    send({ type: "target", joints: S.target });
-    send({ type: "engage", on: true, blend_s: M.state === "HOLD" ? 2.5 : 1.5 });
+    send({ type: "target", joints: finiteJoints(S.target) });
+    // Re-engaging after HOLD can find the person's arm well away from where they left off; blend in slower.
+    send({ type: "engage", on: true, blend_s: fromHold ? 2.5 : 1.5 });
   } else if (a === "send" && fs && S.ref) {
     S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip) };
-    if (now - lastSend > 33) { send({ type: "target", joints: S.target }); lastSend = now }
+    if (now - lastSend > 33) { send({ type: "target", joints: finiteJoints(S.target) }); lastSend = now }
   } else if (a === "disengage") send({ type: "engage", on: false });
   else if (a === "home") send({ type: "home" });
   else if (a === "reset") filt.reset();
@@ -297,27 +312,14 @@ function makeTwin(el) {
   const r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   r.setPixelRatio(devicePixelRatio); el.appendChild(r.domElement);
   const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(38, 1, 0.01, 10);
-  cam.position.set(0.62, 0.3, 0.12);
-  const ctl = new OrbitControls(cam, r.domElement); ctl.target.set(0, 0.15, 0); ctl.enableDamping = true; ctl.enablePan = false;
+  cam.position.set(0, 0.2, -0.8);
+  const ctl = new OrbitControls(cam, r.domElement); ctl.target.set(0, 0.19, 0); ctl.enableDamping = true; ctl.enablePan = false;
   scene.add(new THREE.HemisphereLight(0xffffff, 0x1a2230, 1.5));
-  const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(1, 2, 1.2); scene.add(dl);
+  const dl = new THREE.DirectionalLight(0xffffff, 2.4); dl.position.set(1, 2, -1.2); scene.add(dl);
   scene.add(new THREE.GridHelper(1.2, 24, 0x2a2f37, 0x181b20));
-  const body = new THREE.MeshStandardMaterial({ color: 0xeceae4, roughness: 0.45 });
-  const acc = new THREE.MeshStandardMaterial({ color: 0xc8ff3d, roughness: 0.4, emissive: 0x263400 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.6 });
-  const mesh = (g, m, x = 0, y = 0, z = 0) => { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); return o };
-  const box = (w, h, d, m, y) => mesh(new THREE.BoxGeometry(w, h, d), m, 0, y);
-  const cyl = (rr, h, m, y = 0) => mesh(new THREE.CylinderGeometry(rr, rr, h, 32), m, 0, y);
-  const knuckle = () => { const k = cyl(0.021, 0.045, acc); k.rotation.z = Math.PI / 2; return k };
-  const joint = (parent, y) => { const g = new THREE.Group(); g.position.y = y; parent.add(g); return g };
-  scene.add(cyl(0.06, 0.03, dark, 0.015));
-  const pan = joint(scene, 0.03); pan.add(cyl(0.042, 0.05, body, 0.025));
-  const sh = joint(pan, 0.06); sh.add(knuckle(), box(0.036, 0.115, 0.03, body, 0.0575));
-  const el2 = joint(sh, 0.115); el2.add(knuckle(), box(0.03, 0.13, 0.028, body, 0.065));
-  const wf = joint(el2, 0.13); wf.add(knuckle());
-  const wr = joint(wf, 0); wr.add(box(0.032, 0.05, 0.032, acc, 0.025));
-  const fixed = box(0.009, 0.065, 0.022, dark, 0.08); fixed.position.x = -0.012; wr.add(fixed);
-  const jaw = joint(wr, 0.05); jaw.position.x = 0.012; jaw.add(box(0.009, 0.065, 0.022, dark, 0.032));
+  // Real SO-101 CAD (official URDF + STL meshes); its joint degrees match the motors' calibrated degrees.
+  let robot = null;
+  createRobot().then(m => { robot = m; scene.add(m.root) }).catch(e => console.warn("robot model", e));
   const cur = {}, rad = d => d * Math.PI / 180;
   const tick = () => {
     requestAnimationFrame(tick);
@@ -327,12 +329,7 @@ function makeTwin(el) {
     const src = measured ? S.obs : S.target;
     $("#twinLabel").textContent = measured ? "robot · measured" : "twin · target";
     for (const j of JOINTS) { const t = src[j] ?? 0; cur[j] = (cur[j] ?? t) + 0.25 * (t - (cur[j] ?? t)) }
-    pan.rotation.y = rad(cur.shoulder_pan);
-    sh.rotation.x = rad(cur.shoulder_lift);
-    el2.rotation.x = rad(cur.elbow_flex) + Math.PI / 2;
-    wf.rotation.x = rad(cur.wrist_flex);
-    wr.rotation.y = rad(cur.wrist_roll);
-    jaw.rotation.z = -rad((cur.gripper ?? 0) * 0.4);
+    if (robot && JOINTS.every(j => Number.isFinite(cur[j]))) robot.setPose(cur);
     ctl.update(); r.render(scene, cam);
   };
   tick();

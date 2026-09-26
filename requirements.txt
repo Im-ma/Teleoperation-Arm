@@ -3,3 +3,4 @@ feetech-servo-sdk>=1.0.0,<2.0.0
 deepdiff>=7.0.1,<9.0.0
 numpy>=1.26,<2
 aiohttp>=3.9
+# asyncpg is optional: only needed if TIGER_DATABASE_URL is set (telemetry.py writes to Tiger Data)

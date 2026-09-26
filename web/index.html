@@ -19,7 +19,7 @@
 *{box-sizing:border-box;margin:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--text);font:16px/1.45 'Space Grotesk',system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden}
-header{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line)}
+header{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;row-gap:6px}
 .brand{font-weight:700;letter-spacing:.14em;font-size:14px}
 .brand i{color:var(--acc);font-style:normal}
 .grow{flex:1}
@@ -30,8 +30,9 @@ button.pill{background:none;cursor:pointer}
 main{flex:1;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:14px;padding:14px;min-height:0}
 .cam{position:relative;border-radius:var(--r);overflow:hidden;background:#000;min-height:0}
 #view{width:100%;height:100%;object-fit:contain;display:block}
-#video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:0}
+#video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:0;opacity:0;pointer-events:none}
 #view{position:relative;z-index:1}
+.caption,.meter,.gate{z-index:2} [hidden]{display:none!important}
 .caption{position:absolute;left:0;right:0;top:0;padding:22px 26px 40px;font-size:clamp(20px,2.6vw,34px);font-weight:700;line-height:1.15;
   background:linear-gradient(#000c,#0000);text-shadow:0 2px 12px #000;transition:color .2s}
 .caption small{display:block;font:500 13px var(--mono);color:var(--dim);letter-spacing:.12em;margin-bottom:6px;text-transform:uppercase}

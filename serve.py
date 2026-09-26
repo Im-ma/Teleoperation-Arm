@@ -306,6 +306,7 @@ class Bridge:
                 goal, step = None, HOME_STEP
                 stale = time.monotonic() - self.target_t
                 if self.mode == "engaged" and stale > 2.0:
+                    self.tele.end_session()
                     await self.say("Lost the page. Holding position.", "idle")
                 elif self.mode == "engaged" and self.target and stale < DEADMAN_S:
                     self.blend = min(1.0, self.blend + 1 / (self.blend_s * HZ))
@@ -381,9 +382,15 @@ async def ws_handler(req):
         B.run(B.home())  # a fresh page: glide to the goalpost pose so people know what to copy
     async for m in ws:
         if m.type == WSMsgType.TEXT:
-            await handle(json.loads(m.data))
+            try:
+                data = json.loads(m.data)
+            except Exception:
+                await ws.send_json({"type": "error", "msg": "Bad JSON"})
+                continue
+            await handle(data)
     B.clients.discard(ws)
     if not B.clients and B.mode == "engaged":
+        B.tele.end_session()
         await B.say("Nobody driving. Holding position.", "idle")
     return ws
 
@@ -392,20 +399,27 @@ async def api_state(_):
     return web.json_response({**B.status(), "joints": B.obs})
 
 
+async def json_body(req):
+    try:
+        return await req.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON body")
+
+
 async def api_cmd(req):
-    body = await req.json() if req.can_read_body else {}
+    body = await json_body(req) if req.can_read_body else {}
     await handle({**body, "type": req.match_info["cmd"]})
     return web.json_response({**B.status(), "joints": B.obs})
 
 
 async def api_tts(req):
-    body = await req.json()
+    body = await json_body(req)
     audio = await sponsors.tts(str(body.get("text", "")))
     return web.Response(body=audio, content_type="audio/mpeg") if audio else web.Response(status=204)
 
 
 async def api_command(req):
-    body = await req.json()
+    body = await json_body(req)
     out = await sponsors.command(str(body.get("text", "")))
     g = out["gesture"]
     out["frames"] = sponsors.GESTURES.get(g, [])
