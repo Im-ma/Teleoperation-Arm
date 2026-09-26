@@ -1,0 +1,6 @@
+lerobot[feetech]
+aiohttp>=3.9
+numpy>=1.26,<2
+# only for mimic.py (desktop OpenCV version); the web app tracks in the browser
+mediapipe==0.10.21
+opencv-python>=4.10
