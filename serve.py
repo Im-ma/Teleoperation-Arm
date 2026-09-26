@@ -217,8 +217,9 @@ class Bridge:
                 await asyncio.to_thread(r._save_calibration)
             self.robot, self.lim, self.state = r, limits(r), "live"
             self.cmd = dict(await self.read())
-            if not POSES.exists():  # first run: wherever the arm sits now becomes the start pose
-                await self.save_ready()
+            # Wherever the arm sits when the bridge connects is this session's start pose:
+            # every page load or R brings it back here. Pose by hand + Save as ready still overrides it.
+            await self.save_ready()
             self.run(self.home())
         except Exception as e:
             self.robot, self.state = None, "error"

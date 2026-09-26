@@ -35,7 +35,7 @@ Rule: **nothing from the cloud can move the robot.** All API keys live in `.env`
 
 - **Fixed reference:** the goalpost pose is the reference for both sides.
   - **Human side:** fixed anatomical numbers (`lift 0` = arm out sideways, `elbow 90`, `pan 0`).
-  - **Robot side:** the saved ready pose. Set it once, today, with **Pose by hand**, then **Save as ready**.
+  - **Robot side:** the ready pose: wherever the arm sat when the bridge connected. Every page load or R homes back there. To change it, **Pose by hand**, then **Save as ready**, or restart the bridge with the arm in the new pose.
 - **Captured at lock time:** wrist, roll and grip-open are the noisy ones. We record them during the 1 s lock hold, which the person is doing anyway, so it's still zero clicks.
 - **Hinge angles are measured in the image** (`web/angles.mjs`), in a body frame built from the shoulder line.
   - This works because the hinges' rotation axes point at the camera in this pose.
