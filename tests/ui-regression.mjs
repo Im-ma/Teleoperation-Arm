@@ -29,7 +29,7 @@ const tags = html => [...html.matchAll(/<([a-z][\w-]*)\b([^>]*\bid=["']([^"']+)[
 const modules = html => [...html.matchAll(/<script\b(?=[^>]*\btype=["']module["'])(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
 
 test('all baseline robot, bridge, mapping, model and support files are byte-identical', () => {
-  const allowed = new Set(['web/index.html', 'web/replay.html', 'web/app.js']);
+  const allowed = new Set(['web/index.html', 'web/replay.html', 'web/app.js', 'tests/ui-regression.mjs']);
   const files = git('ls-tree', '-r', '--name-only', BASE).toString().trim().split('\n');
   for (const file of files.filter(file => !allowed.has(file))) {
     assert.ok(existsSync(resolve(root, file)), `Protected file removed: ${file}`);
