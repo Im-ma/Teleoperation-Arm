@@ -45,17 +45,33 @@ export function panAngle(W, arm) {
   return { yaw, pan: horiz > 0.3 ? Math.atan2(u[0] * fx + u[2] * fz, u[0] * sx + u[2] * sz) * D : undefined };
 }
 
-// Hand position from MediaPipe's 3D world landmarks: elevation above horizontal, reach (1 = arm straight)
-// and depth (share of the shoulder-to-wrist line pointing toward or away from the camera).
-export function reach3D(W, side) {
-  const [s, e, wr] = SIDE[side];
+// The whole arm from MediaPipe's 3D world landmarks, in the arm's own vertical plane (the plane the
+// robot's base swings to): hand position as an angle above horizontal and a reach (1 = arm straight),
+// depth (share of the shoulder-to-wrist line pointing toward or away from the camera), and where the
+// hand points (3D hand landmarks): 0 = level ahead, 90 = straight up (a stop hand), 180 = level behind.
+export function arm3D(W, side, Hw) {
+  const [s, e, wr, o] = SIDE[side];
   if (![0, 11, 12, s, e, wr].every(i => W?.[i])) return null;
   const S = v3(W[s]), hv = sub(v3(W[wr]), S), n = len(hv);
   const arm = len(sub(v3(W[e]), S)) + len(sub(v3(W[wr]), v3(W[e])));
   if (n < 1e-3 || arm < 1e-3) return null;
   const mid = scale([W[11].x + W[12].x, W[11].y + W[12].y, W[11].z + W[12].z], 0.5);
   const up = dot(sub(v3(W[0]), mid), [0, -1, 0]) >= 0 ? [0, -1, 0] : [0, 1, 0];   // toward the head
-  return { ang: Math.asin(clamp(dot(hv, up) / n, -1, 1)) * D, reach: n / arm, depth: Math.abs(hv[2]) / n };
+  const flat = v => sub(v, scale(up, dot(v, up)));
+  // the plane's forward: where the hand is seen from above, or the body's forward when it is overhead
+  let fw = flat(hv);
+  if (len(fw) < 0.3 * n) { fw = unit(cross(flat(sub(S, v3(W[o]))), up)); if (fw[2] > 0) fw = scale(fw, -1) }
+  fw = unit(fw);
+  const inPlane = v => Math.atan2(dot(v, up), dot(v, fw)) * D;
+  const E = v3(W[e]);
+  const out = { ang: Math.asin(clamp(dot(hv, up) / n, -1, 1)) * D, reach: n / arm, depth: Math.abs(hv[2]) / n,
+    upper: inPlane(sub(E, S)), fore: inPlane(sub(v3(W[wr]), E)) };
+  if (Hw) {
+    const a = unit(sub(v3(Hw[9]), v3(Hw[0])));
+    out.hand = inPlane(a);
+    out.handOk = Math.hypot(dot(a, up), dot(a, fw)) > 0.5;   // not pointing sideways out of the plane
+  }
+  return out;
 }
 
 // Wrist bend, roll about the hand's own axis (3D hand landmarks) and grip opening.
@@ -63,12 +79,17 @@ export function handFeatures(Hn, Hw, F, fore, w, h) {
   const P = i => [Hn[i].x * w, Hn[i].y * h];
   const hv = sub(P(9), P(0)), out = { handLen: len(hv) };
   out.wrist = wrap(ang(F, hv) - ang(F, fore));
-  out.grip = len(sub(P(4), P(8))) / (out.handLen + 1e-6);
+  // the claw's two jaws: the thumb, and the other four fingers together (the middle of their tips),
+  // so one finger misread can't open or close it
+  const tips = [8, 12, 16, 20].map(P), mid = scale(tips.reduce((s, p) => [s[0] + p[0], s[1] + p[1]], [0, 0]), 0.25);
+  out.grip = len(sub(P(4), mid)) / (out.handLen + 1e-6);
   if (Hw) {
     const a = unit(sub(v3(Hw[9]), v3(Hw[0]))), k = sub(v3(Hw[17]), v3(Hw[5]));
     const kp = sub(k, scale(a, dot(k, a)));
     const zp = unit(sub([0, 0, 1], scale(a, a[2]))), q = cross(a, zp);
-    out.rollOk = Math.hypot(a[0], a[1]) > 0.5;            // hand axis not pointing at the camera
+    // hand axis not pointing at the camera, and palm not edge-on (past ~70° its turn rests on the
+    // model's depth guess alone, which flips): beyond that the claw holds its last roll
+    out.rollOk = Math.hypot(a[0], a[1]) > 0.5 && Math.abs(dot(kp, q)) > 0.35 * len(kp);
     out.roll = Math.atan2(dot(kp, zp), dot(kp, q)) * D;
   }
   return out;
@@ -109,23 +130,19 @@ export function armFeatures(L, W, hands, arm, w, h) {
   conf.reachAng = conf.reach = Math.min(vis(s), vis(e), vis(wr));
   // Reaching toward or away from the camera, the flat image can't see the hand's height or distance (the
   // arm looks short and its angle is noise). Blend over to the 3D landmarks as the arm leaves the picture plane.
-  const r3 = reach3D(W, side);
+  const H0 = pickHand(L, hands, side, F, w, h);
+  const r3 = arm3D(W, side, H0.Hw), k = r3 ? clamp((r3.depth - 0.3) / 0.4, 0, 1) : 0;
   if (r3) {
-    const k = clamp((r3.depth - 0.3) / 0.4, 0, 1);
     f.reachAng += k * wrap(r3.ang - f.reachAng);
     f.reach += k * (r3.reach - f.reach);
   }
+  // Each segment's own angle (0 = level, + up), for the shoulder (upper arm) and elbow (forearm) motors.
+  f.upper = f.lift; f.fore = ang(F, fore);
+  if (r3) { f.upper += k * wrap(r3.upper - f.upper); f.fore += k * wrap(r3.fore - f.fore) }
+  conf.upper = k > 0.5 ? conf.reachAng : conf.lift; conf.fore = k > 0.5 ? conf.reachAng : conf.elbow;
   const { pan, yaw } = panAngle(W, side);
   f.pan = pan; conf.pan = pan === undefined || yaw > 25 ? 0 : conf.lift;
-  // the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,
-  // and within a third of a shoulder width (so a stray hand across the body is never taken)
-  const ow = SIDE[side === "right" ? "left" : "right"][2];
-  let H = null, Hw = null, Hs = 0, best = 0.35 * F.sw;
-  (hands?.landmarks || []).forEach((hl, i) => {
-    const hx = hl[0].x * w, hy = hl[0].y * h;
-    const d = Math.hypot(hx - L[wr].x * w, hy - L[wr].y * h), dOther = Math.hypot(hx - L[ow].x * w, hy - L[ow].y * h);
-    if (d < best && d < dOther) { best = d; H = hl; Hw = hands.worldLandmarks?.[i]; Hs = hands.handedness?.[i]?.[0]?.score ?? 1 }
-  });
+  const { H, Hw, Hs } = H0;
   // A fast-moving hand is motion-blurred and its finger landmarks are guesses: hold the hand
   // joints (claw, wrist, roll) until it slows, rather than snapping the claw on a blurred frame.
   const now = performance.now(), wx = L[wr].x * w, wy = L[wr].y * h;
@@ -137,8 +154,22 @@ export function armFeatures(L, W, hands, arm, w, h) {
     f.wrist = hf.wrist; conf.wrist = ok;
     f.grip = hf.grip; conf.grip = ok;
     f.roll = hf.roll; conf.roll = ok && hf.rollOk ? 1 : 0;
+    f.hand = r3?.hand; conf.hand = ok && r3?.handOk ? 1 : 0;
   }
-  return { arm, f, conf, F, H, yaw: yaw ?? 0, idx: [s, e, wr] };
+  return { arm, f, conf, F, H, a3: r3, yaw: yaw ?? 0, idx: [s, e, wr] };
+}
+
+// the hand whose wrist sits on this arm's wrist: closer to it than to the other arm's wrist,
+// and within a third of a shoulder width (so a stray hand across the body is never taken)
+function pickHand(L, hands, side, F, w, h) {
+  const wr = SIDE[side][2], ow = SIDE[side === "right" ? "left" : "right"][2];
+  let H = null, Hw = null, Hs = 0, best = 0.35 * F.sw;
+  (hands?.landmarks || []).forEach((hl, i) => {
+    const hx = hl[0].x * w, hy = hl[0].y * h;
+    const d = Math.hypot(hx - L[wr].x * w, hy - L[wr].y * h), dOther = Math.hypot(hx - L[ow].x * w, hy - L[ow].y * h);
+    if (d < best && d < dOther) { best = d; H = hl; Hw = hands.worldLandmarks?.[i]; Hs = hands.handedness?.[i]?.[0]?.score ?? 1 }
+  });
+  return { H, Hw, Hs };
 }
 
 // How close to the goalpost this arm is: 1 = spot on, 0 = not at all.

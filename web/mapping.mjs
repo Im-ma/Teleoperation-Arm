@@ -67,6 +67,19 @@ export function kinematicJoints(f, flip = {}) {
 // Link lengths (m) from the URDF, in the arm's vertical plane.
 export const LINK = { upper: 0.116, fore: 0.135 };
 const R2D = 180 / Math.PI, D2R = Math.PI / 180;
+// Pose matching: the robot's upper link copies your upper arm (shoulder motor) and its forearm copies
+// your forearm (elbow motor), angles from level, + up. The SO-101 elbow bends only ~20° up past straight,
+// so a forearm raised further is shared: both links split the difference, as close to your pose as it gets.
+export function segmentJoints(f, limits = {}) {
+  if (!finite(f?.upper) || !finite(f?.fore)) return null;
+  const lim = j => limits[j]?.every(finite) ? limits[j] : [-180, 180];
+  const [liftLo, liftHi] = lim("shoulder_lift"), [elbLo, elbHi] = lim("elbow_flex");
+  const bend = wrap(f.upper - f.fore), fit = clamp(bend, elbLo - KIN.elbow, elbHi - KIN.elbow);
+  const U = clamp(f.upper - (bend - fit) / 2, KIN.lift - liftHi, KIN.lift - liftLo), Fr = U - fit;
+  // the claw points where the hand points: level hand, level claw
+  return { shoulder_lift: KIN.lift - U, elbow_flex: KIN.elbow + fit, wrist_flex: Fr + KIN.wrist - (finite(f.hand) ? wrap(f.hand) : Fr) };
+}
+
 export function reachJoints(f, limits = {}) {
   if (!finite(f?.reachAng) || !finite(f?.reach)) return null;
   const { upper: a, fore: b } = LINK, lim = j => limits[j]?.every(finite) ? limits[j] : [-180, 180];
@@ -87,7 +100,8 @@ export function reachJoints(f, limits = {}) {
   const out = { shoulder_lift: KIN.lift - U * R2D, elbow_flex: clamp((U - Fe) * R2D + KIN.elbow, elbLo, elbHi) };
   const Fdeg = U * R2D - (out.elbow_flex - KIN.elbow);
   // the claw points where your hand points (or along your forearm when the hand isn't seen)
-  const handEl = finite(f.lift) && finite(f.elbow) ? f.lift + f.elbow + (finite(f.wrist) ? wrap(f.wrist) : 0) : Fdeg;
+  // The claw points where the hand points (3D, in the arm's own vertical plane): level hand, level claw.
+  const handEl = finite(f.hand) ? wrap(f.hand) : Fdeg;
   out.wrist_flex = Fdeg + KIN.wrist - handEl;
   return out;
 }
@@ -98,17 +112,26 @@ export function mapMatchedPose(features, reference, limits, flip = {}) {
     const range = limits[j];
     if (finite(v) && range?.every(finite) && range[0] < range[1]) out[j] = clamp(v, ...range);
   };
-  for (const [j, v] of Object.entries(reachJoints(features, limits) ?? kinematicJoints(features, flip))) put(j, v);
+  for (const [j, v] of Object.entries(segmentJoints(features, limits) ?? reachJoints(features, limits) ?? kinematicJoints(features, flip))) put(j, v);
   // Base: swinging the arm toward the camera swings the robot toward the viewer of the twin.
   if (finite(features?.pan)) put("shoulder_pan", reference.robotZero.shoulder_pan + DEFAULT_SIGN.shoulder_pan * (flip.shoulder_pan ? -1 : 1) * wrap(features.pan));
   if (finite(features?.roll)) put("wrist_roll", reference.robotZero.wrist_roll + DEFAULT_SIGN.wrist_roll * (flip.wrist_roll ? -1 : 1) * wrap(features.roll - reference.humanZero.roll));
   if (finite(features?.grip)) {
     // A fist or pinch (thumb tip to index tip under a quarter hand length) closes the jaw fully and a
     // relaxed open hand opens it fully, across the gripper's whole range.
-    const openRef = clamp(reference.humanZero.grip, 0.6, 0.9);
+    const openRef = clamp(reference.humanZero.grip, 0.6, 1.2);
     const open = clamp((features.grip - reference.pinch) / (openRef - reference.pinch), 0, 1);
     const [lo, hi] = limits.gripper?.every(finite) ? limits.gripper : [0, 100];
     put("gripper", flip.gripper ? hi - open * (hi - lo) : lo + open * (hi - lo));
   }
   return out;
+}
+
+// Where the robot's wrist sits (metres, base frame) for a joint pose: used to tell when a returning
+// person's hand lines up with the paused robot's hand again.
+export function wristPoint(j) {
+  if (![j?.shoulder_pan, j?.shoulder_lift, j?.elbow_flex].every(finite)) return null;
+  const U = (KIN.lift - j.shoulder_lift) * D2R, F = U - (j.elbow_flex - KIN.elbow) * D2R, p = j.shoulder_pan * D2R;
+  const r = LINK.upper * Math.cos(U) + LINK.fore * Math.cos(F);
+  return [r * Math.cos(p), r * Math.sin(p), LINK.upper * Math.sin(U) + LINK.fore * Math.sin(F)];
 }

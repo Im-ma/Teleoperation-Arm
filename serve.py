@@ -26,6 +26,7 @@ from so101_teleop.constants import CALIBRATION_DIR
 from so101_teleop.pose_mapping import JOINTS, limits_from_calibration
 
 import sponsors
+from live import ws_vision
 from telemetry import Telemetry
 
 sponsors.load_env()
@@ -323,13 +324,18 @@ class Bridge:
                 elif self.mode in ("homing", "testing", "gesture"):
                     goal, step = self.goal, GESTURE_STEP if self.mode == "gesture" else HOME_STEP
                 if goal:
+                    # Ease toward the goal (about 0.1 s time constant) under the per-tick speed cap, so
+                    # targets that arrive at an uneven camera rate never turn into stop-and-go steps.
+                    pulls = {}
                     for j, t in goal.items():
-                        s = step * (3 if j == "gripper" else 1)
                         c = self.cmd.get(j, self.obs.get(j, t))
-                        # Ease toward the goal (about 0.1 s time constant) under the per-tick speed cap, so
-                        # targets that arrive at an uneven camera rate never turn into stop-and-go steps.
-                        pull = EASE * (t - c) if step == MAX_STEP else t - c
-                        self.cmd[j] = c + float(np.clip(pull, -s, s))
+                        pulls[j] = (c, EASE * (t - c) if step == MAX_STEP else t - c)
+                    # One arm move, not a queue: when the cap bites, base, shoulder, elbow and wrist flex all slow by
+                    # the same factor, so a combined move starts and finishes together (claw and roll run free).
+                    k = max([abs(p) / step for j, (c, p) in pulls.items() if j not in ("gripper", "wrist_roll")] + [1.0])
+                    for j, (c, p) in pulls.items():
+                        s = step * (3 if j == "gripper" else 1)
+                        self.cmd[j] = c + float(np.clip(p if j in ("gripper", "wrist_roll") else p / k, -s, s))
                     await self.io(self.robot.send_action, {f"{j}.pos": v for j, v in self.cmd.items() if j in JOINTS})
                 self.errors = 0
             except Exception as e:
@@ -434,6 +440,11 @@ async def api_tts(req):
     return web.Response(body=audio, content_type="audio/mpeg") if audio else web.Response(status=204)
 
 
+async def api_vision(req):
+    body = await json_body(req)
+    return web.json_response(await sponsors.vision(str(body.get("image", ""))))
+
+
 async def api_command(req):
     body = await json_body(req)
     out = await sponsors.command(str(body.get("text", "")))
@@ -469,6 +480,10 @@ async def auth(req, handler):
     return resp
 
 
+async def ai_page(_):   # the AI-only page: calibrate once, then Gemini drives
+    return web.FileResponse(WEB_DIR / "ai.html", headers={"Cache-Control": "no-store"})
+
+
 async def index(_):
     return web.FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
@@ -489,12 +504,15 @@ def build_app() -> web.Application:
     app.add_routes(
         [
             web.get("/", index),
+            web.get("/ai", ai_page),
             web.get("/ws", ws_handler),
             web.get("/api/state", api_state),
             web.get("/api/sessions", api_sessions),
             web.get("/api/telemetry", api_telemetry),
             web.post("/api/tts", api_tts),
             web.post("/api/command", api_command),
+            web.post("/api/vision", api_vision),
+            web.get("/ws/vision", ws_vision),
             web.post("/api/{cmd}", api_cmd),
             web.static("/models", MODEL_DIR),
             web.static("/web", WEB_DIR),
