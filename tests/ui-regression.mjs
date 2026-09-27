@@ -17,7 +17,7 @@ import { createMirror } from '../web/mirror.mjs';
 import { estimateSyncQuality } from '../web/ui-metrics.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const BASE = '3eca35e';   // robot code the UI is integrated against (IK mirroring + accuracy)
+const BASE = 'cdc6952';   // robot code the UI is integrated against (IK mirroring + accuracy)
 const git = (...args) => execFileSync('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 });
 const original = path => git('show', `${BASE}:${path}`);
 const current = path => readFileSync(resolve(root, path));
