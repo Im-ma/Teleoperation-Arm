@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 import re
-import time
 from pathlib import Path
 
 import aiohttp
@@ -118,53 +117,3 @@ async def tts(text: str) -> bytes | None:
     VOICE_CACHE.mkdir(exist_ok=True)
     path.write_bytes(audio)
     return audio
-
-
-VISION_PROMPT = (
-    "A filmstrip of one arm movement, frames numbered left to right, oldest first. Each frame is cropped to the "
-    "person, with their tracked skeleton drawn in (lines = arms). Say what the arm did and where it ended. "
-    "Angles in degrees from the person's point of view: upper_arm and forearm = angle above level (+ up, - down), "
-    "hand = where the hand points above level, pan = arm direction seen from above: 0 = straight out to the person's side, + = swung forward toward the camera, - = swung back. "
-    "grip = open or closed hand at the end."
-)
-VISION_SCHEMA = {"type": "OBJECT", "required": ["did", "upper_arm", "forearm", "hand", "pan", "grip"], "properties": {
-    "did": {"type": "STRING"}, "upper_arm": {"type": "NUMBER"}, "forearm": {"type": "NUMBER"},
-    "hand": {"type": "NUMBER"}, "pan": {"type": "NUMBER"}, "grip": {"type": "STRING", "enum": ["open", "closed"]}}}
-
-
-async def vision(image_b64: str) -> dict:
-    """One movement filmstrip (JPEG, base64) -> what the arm did and its end pose. Gemini first, then Perplexity."""
-    t0 = time.time()
-    try:
-        if os.environ.get("GEMINI_API_KEY") and os.environ.get("VISION_PROVIDER", "gemini") == "gemini":
-            model = os.environ.get("VISION_MODEL", "gemini-3.5-flash-lite")
-            body = {"contents": [{"parts": [{"text": VISION_PROMPT}, {"inline_data": {"mime_type": "image/jpeg", "data": image_b64}}]}],
-                    "generationConfig": {"responseMimeType": "application/json", "responseSchema": VISION_SCHEMA,
-                                         "thinkingConfig": {"thinkingLevel": "minimal"}}}
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
-                async with s.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-                                  json=body, headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"]}) as r:
-                    data = await r.json()
-            if "error" in data:
-                return {"ok": False, "by": model, "error": data["error"].get("message", "")[:160]}
-            out = json.loads(data["candidates"][0]["content"]["parts"][0]["text"])
-        elif os.environ.get("PERPLEXITY_API_KEY"):
-            model = os.environ.get("VISION_MODEL", "sonar")
-            body = {"model": model, "messages": [{"role": "user", "content": [
-                {"type": "text", "text": VISION_PROMPT + " Reply with JSON only: " + json.dumps(list(VISION_SCHEMA["properties"]))},
-                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + image_b64}}]}],
-                "response_format": {"type": "json_schema", "json_schema": {"schema": {
-                    "type": "object", "required": VISION_SCHEMA["required"], "properties": {
-                        k: {"type": "string" if v["type"] == "STRING" else "number"} for k, v in VISION_SCHEMA["properties"].items()}}}}}
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as s:
-                async with s.post("https://api.perplexity.ai/chat/completions", json=body,
-                                  headers={"Authorization": "Bearer " + os.environ["PERPLEXITY_API_KEY"]}) as r:
-                    data = await r.json()
-            if "error" in data:
-                return {"ok": False, "by": model, "error": str(data["error"].get("message", data["error"]))[:160]}
-            out = json.loads(data["choices"][0]["message"]["content"])
-        else:
-            return {"ok": False, "by": "none", "error": "No GEMINI_API_KEY or PERPLEXITY_API_KEY in .env"}
-        return {"ok": True, "by": model, "ms": round((time.time() - t0) * 1000), "result": out}
-    except Exception as e:
-        return {"ok": False, "by": "vision", "error": str(e)[:160]}

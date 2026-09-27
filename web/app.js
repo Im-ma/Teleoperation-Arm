@@ -3,16 +3,13 @@
 import { FilesetResolver, PoseLandmarker, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/vision_bundle.mjs";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { JOINTS, clamp, mapMatchedPose, segmentJoints, wrap, wristPoint } from "./mapping.mjs";
+import { JOINTS, clamp, mapMatchedPose, wrap, wristPoint } from "./mapping.mjs";
 import { GOALPOST, SIDE, armFeatures, framing, goalpostScore, physicalSide } from "./angles.mjs";
 import { FeatureFilter } from "./filters.mjs";
 import { createMirror } from "./mirror.mjs";
 import { LINES, createVoice } from "./voice.js";
 import { createCommands } from "./command.js";
 import { createRobot } from "./robot.mjs";
-import { createGoal } from "./goal.mjs";
-import { createMoves } from "./moves.mjs";
-import { createWatch } from "./watch.mjs";
 
 const $ = s => document.querySelector(s);
 const view = $("#view"), ctx = view.getContext("2d"), video = $("#video");
@@ -146,15 +143,6 @@ function frame(now) {
   lastT = video.currentTime;
   const w = view.width, h = view.height;
   now = lastTs = Math.max(lastTs + 1, now);   // MediaPipe needs strictly increasing timestamps
-  if (liveMode) {   // AI mode: only the model watches. No tracker, no lock/lost states, no voice.
-    ctx.save(); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.drawImage(video, 0, 0, w, h); ctx.restore();
-    watch.update(now);
-    if (aiTarget) {   // the model's decision, glided there smoothly (all joints start and arrive together)
-      S.target = { ...S.target, ...aiGoal.update(aiTarget, now), ...(Number.isFinite(aiTarget.gripper) ? { gripper: aiTarget.gripper } : {}) };
-      if (live() && now - lastSend > 33) { send({ type: "target", joints: finiteJoints(S.target) }); lastSend = now }
-    }
-    return;
-  }
   const pr = pose.detectForVideo(video, now);
   const L = pr.landmarks?.[0], W = pr.worldLandmarks?.[0];
   const hr = detectHand(L, now);
@@ -186,129 +174,16 @@ function frame(now) {
   const fromHold = !!out.resume;   // HOLD → MIRRORING: hand realigned, blend in gently
   for (const a of out.actions) act(a, fs, now, fromHold);
   if (out.say) { if (out.say === "hello") voice.newPerson(); voice.say(out.say) }
-  if (aiMode && out.state === "MIRRORING") { draw(pr, r, fr, out); setLiveMode(true); return }   // synced: the AI takes over
   if (M.state !== "MIRRORING" && M.state !== "HOLD" && now > twinGestureUntil) S.target = { ...robotZero() };
 
   draw(pr, r, fr, out);
   caption(out, fr);
   lastR = r; lastOut = out;
-  if (visionMode && L && out.state === "MIRRORING") moves.update(L, r?.idx, now);
   if (++fpsN && now - fpsT > 1000) { S.fps = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now; pills() }
   if (out.state !== lastState) { lastState = out.state; states(); pills() }
   if ($("#debug").open) bars();
 }
 let lastState = "";
-// Goal mode (T): the robot goes where your arm ends up, not along the way it got there.
-const goal = createGoal();
-let goalMode = false;
-try { goalMode = localStorage.getItem("goalMode") === "1" } catch {}
-function setGoalMode(on, save = true) {
-  goalMode = on; goal.reset(S.target);
-  if (save) try { localStorage.setItem("goalMode", on ? "1" : "0") } catch {}
-  $("#goalMode").textContent = on ? "🎯 Goal mode: on" : "🎯 Goal mode: off";
-  $("#goalMode").classList.toggle("ghost", !on);
-}
-$("#goalMode").onclick = () => setGoalMode(!goalMode);
-setGoalMode(goalMode, false);
-
-// AI vision (V): each movement is filmed start to end (moves.mjs) and Gemini says what the arm did and where
-// it ended; the robot glides to that end pose. The tracker's own reading is shown beside it to compare.
-const aiGoal = createGoal({ STILL_MS: 0 });
-let visionMode = false, aiPose = null, visionBusy = false;
-const moves = createMoves({ video, onMove: async m => {
-  $("#vision").hidden = false; $("#visionStrip").src = m.image;
-  if (visionBusy) return;   // one question at a time; the next movement asks again
-  visionBusy = true; $("#visionText").textContent = `Asking the AI about ${m.frames} frames (${m.ms} ms of movement)…`;
-  const f = S.hist.at(-1)?.f;
-  try {
-    const r = await (await fetch("/api/vision", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: m.image.split(",")[1] }) })).json();
-    if (!r.ok) { $("#visionText").textContent = `AI error (${r.by}): ${r.error}`; return }
-    const a = r.result, n = x => Math.round(x);
-    aiPose = { upper: a.upper_arm, fore: a.forearm, hand: a.hand, pan: a.pan, grip: a.grip };
-    $("#visionText").textContent = `AI · ${r.ms} ms: ${a.did}. Upper arm ${n(a.upper_arm)}°, forearm ${n(a.forearm)}°, hand ${n(a.hand)}°, pan ${n(a.pan)}°, ${a.grip}.`
-      + (f ? ` Tracker: ${n(f.upper)}°, ${n(f.fore)}°, ${n(f.hand ?? NaN)}°, pan ${n(f.pan ?? NaN)}°.` : "");
-  } catch (e) { $("#visionText").textContent = "AI error: " + e.message }
-  finally { visionBusy = false }
-} });
-function setVisionMode(on) {
-  visionMode = on; aiPose = null; moves.reset(); aiGoal.reset(S.target);
-  $("#visionMode").textContent = on ? "👁 AI vision: on" : "👁 AI vision: off";
-  $("#visionMode").classList.toggle("ghost", !on);
-}
-$("#visionMode").onclick = () => setVisionMode(!visionMode);
-
-// AI narrate (L): Gemini Live watches the stream (one cropped frame a second, via the bridge at /ws/vision)
-// and, each time your arm stops, says what it did in robot terms: which motor, which way, how far, and
-// which part of your body that motor copies, and where the robot should go: the robot glides there.
-// Tracking, mirroring and voice are off while it runs, so only the model drives.
-const MOTOR = { shoulder_pan: 1, shoulder_lift: 2, elbow_flex: 3, wrist_flex: 4, wrist_roll: 5, gripper: 6 };
-const ARROW = { match: "=", up: "↑", down: "↓", forward: "→", back: "←", "twist in": "↻", "twist out": "↺", open: "⇔", close: "⇒⇐" };
-let liveMode = false, liveWs = null, liveLog = [], aiTarget = null, voiceWas = false;
-const robotNow = () => ({ ...S.target, ...(live() ? S.obs : {}) });   // measured joints when the robot is connected
-const jpeg = async c => { const b = await c.convertToBlob({ type: "image/jpeg", quality: 0.8 }); return btoa(String.fromCharCode(...new Uint8Array(await b.arrayBuffer()))) };
-let liveLast = null;
-const liveSend = async c => { liveLast = c; if (liveWs?.readyState === 1) liveWs.send(JSON.stringify({ frame: await jpeg(c) })) };
-const watch = createWatch({ video, onFrame: liveSend, onMove: async m => {
-  const pair = [m.start, m.end].filter(Boolean), c = document.createElement("canvas");   // what the model is shown
-  c.width = m.end.width; c.height = m.end.height * pair.length;
-  pair.forEach((f, i) => c.getContext("2d").drawImage(f, 0, i * f.height));
-  $("#visionStrip").src = c.toDataURL("image/jpeg", 0.8);
-  const robot = robotNow();   // where the robot is and how far it can go, so the model can match it to you
-  if (liveWs?.readyState === 1) { liveWs.send(JSON.stringify({ ask: true, robot, limits: limits(), start: m.start && await jpeg(m.start), end: await jpeg(m.end) })); liveStatus(`Movement over (${m.ms} ms), asking…`) }
-} });
-function liveStatus(t) {
-  $("#vision").hidden = false;
-  $("#visionText").innerHTML = [t, ...liveLog].map(l => `<div>${l}</div>`).join("");
-}
-function liveMove(d) {
-  const a = d.move, n = a.moves ?? [];
-  const lines = n.map(x => `<b>M${MOTOR[x.joint] ?? "?"} ${x.joint}</b> ${ARROW[x.direction] ?? ""} ${x.direction} ${Math.round(x.degrees)}${x.joint === "gripper" ? "%" : "°"}${Number.isFinite(x.robot_to) ? ` → robot ${Math.round(x.robot_to)}` : ""} — your ${x.body_part}`);
-  // Drive: each joint the model moved goes to its robot_to, kept inside the joint's limits
-  const lim = limits(), to = {};
-  for (const x of n) if (MOTOR[x.joint] && Number.isFinite(x.robot_to)) to[x.joint] = lim[x.joint]?.every(Number.isFinite) ? clamp(x.robot_to, ...lim[x.joint]) : x.robot_to;
-  // The arm's shape: the model reads the pose, the robot's exact geometry turns it into joint angles
-  const p = a.pose, shape = p && segmentJoints({ upper: p.upper_arm, fore: p.forearm, hand: p.hand }, lim);
-  if (shape) Object.assign(to, shape);
-  if (Object.keys(to).length) aiTarget = { ...(aiTarget ?? robotNow()), ...to };
-  const pose = p ? `<br>Your arm: upper ${Math.round(p.upper_arm)}°, forearm ${Math.round(p.forearm)}°, hand ${Math.round(p.hand)}° → robot ${["shoulder_lift", "elbow_flex", "wrist_flex"].map(j => Math.round(to[j] ?? NaN)).join(" / ")}` : "";
-  liveLog = [`AI${d.ms ? ` · ${d.ms} ms` : ""}: ${a.summary ?? ""}${pose}${lines.length ? "<br>" + lines.join("<br>") : " (no motor moved)"}`, ...liveLog].slice(0, 4);
-  liveStatus("");
-}
-// First match: once the model is connected and has seen you, it puts the robot in your pose.
-async function liveSync(tries = 10) {
-  if (!liveMode || liveWs?.readyState !== 1) return;
-  if (!liveLast) return tries && setTimeout(() => liveSync(tries - 1), 500);
-  liveWs.send(JSON.stringify({ ask: true, robot: robotNow(), limits: limits(), end: await jpeg(liveLast) }));
-  liveStatus("Matching the robot to your pose…");
-}
-function setLiveMode(on) {
-  liveMode = on; watch.reset(); liveLog = []; aiTarget = null; liveLast = null;
-  if (on) {   // the AI drives: take hold of the robot where it stands, so nothing jumps
-    voiceWas = voice.muted; voice.muted = true; pills(); $("#stateName").textContent = "AI mode"; $("#capText").textContent = "The AI is watching. Move, then hold still.";
-    S.target = robotNow(); aiGoal.reset(S.target);
-    if (live()) { send({ type: "target", joints: finiteJoints(S.target) }); send({ type: "engage", on: true, blend_s: 1.5 }) }
-  } else { voice.muted = voiceWas; pills(); if (live()) send({ type: "engage", on: false }) }
-  liveWs?.close(); liveWs = null;
-  if (on) {
-    liveWs = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/vision`);
-    liveWs.onmessage = e => { const d = JSON.parse(e.data); d.move ? liveMove(d) : liveStatus(d.error ?? d.status); if (d.status?.startsWith("live")) liveSync() };
-    liveWs.onclose = () => { if (liveMode) liveStatus("AI disconnected. Press R and sync again to reconnect.") };
-  } else $("#vision").hidden = true;
-}
-// AI mode (L): calibrate with the tracker as usual; the moment you're synced the AI takes over for good.
-// From then on the screen is just the camera: no tracker, no lock prompts, no "lost you", no voice.
-// R (reset) or Escape hands back to the tracker to calibrate again.
-let aiMode = false;
-try { aiMode = localStorage.getItem("aiMode") === "1" } catch {}
-function setAiMode(on, save = true) {
-  aiMode = on;
-  if (!on && liveMode) setLiveMode(false);
-  if (save) try { localStorage.setItem("aiMode", on ? "1" : "0") } catch {}
-  $("#liveMode").textContent = on ? "🤖 AI mode: on" : "🤖 AI mode: off";
-  $("#liveMode").classList.toggle("ghost", !on);
-}
-$("#liveMode").onclick = () => setAiMode(!aiMode);
-setAiMode(aiMode, false);
 
 function act(a, fs, now, fromHold) {
   if (a === "lock") {
@@ -322,16 +197,10 @@ function act(a, fs, now, fromHold) {
   } else if (a === "engage") {
     if (fs) S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip) };
     send({ type: "target", joints: finiteJoints(S.target) });
-    goal.reset(S.target);
     // Re-engaging after HOLD can find the person's arm well away from where they left off; blend in slower.
     send({ type: "engage", on: true, blend_s: fromHold ? 2.5 : 1.5 });
   } else if (a === "send" && fs && S.ref) {
-    let m = mapMatchedPose(fs, S.ref, limits(), S.flip);
-    if (visionMode) {   // the AI's end pose drives the arm; hold where we are until it has answered
-      const a = aiPose && mapMatchedPose({ ...fs, ...aiPose, grip: aiPose.grip === "closed" ? S.ref.pinch : S.ref.humanZero.grip }, S.ref, limits(), S.flip);
-      m = { ...(a ?? {}), ...aiGoal.update(a ?? S.target, now) };
-    }
-    S.target = { ...S.target, ...m, ...(goalMode && !visionMode ? goal.update(m, now) : {}) };
+    S.target = { ...S.target, ...mapMatchedPose(fs, S.ref, limits(), S.flip) };
     if (now - lastSend > 33) { send({ type: "target", joints: finiteJoints(S.target) }); lastSend = now }
   } else if (a === "disengage") send({ type: "engage", on: false });
   else if (a === "home") send({ type: "home" });
@@ -446,12 +315,8 @@ const send = m => ws?.readyState === 1 && ws.send(JSON.stringify(m));
 addEventListener("keydown", e => {
   if (e.repeat) return;
   unlockAudio();
-  if ((e.key === "Escape" || e.key === "r" || e.key === "R") && liveMode) setLiveMode(false);
   if (e.key === "Escape") { const o = M.stop(performance.now()); o.actions.forEach(a => act(a)); voice.say(o.say) }
   else if (e.key === "r" || e.key === "R") { send({ type: "engage", on: false }); send({ type: "home" }); M = createMirror(); filt.reset() }
-  else if (e.key === "t" || e.key === "T") setGoalMode(!goalMode);
-  else if (e.key === "v" || e.key === "V") setVisionMode(!visionMode);
-  else if (e.key === "l" || e.key === "L") setAiMode(!aiMode);
   else if (e.key === "m" || e.key === "M") { voice.muted = !voice.muted; pills() }
   else if ((e.key === "g" || e.key === "G") && commands.start()) chat("Listening…");
 });

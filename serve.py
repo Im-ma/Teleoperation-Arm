@@ -26,7 +26,6 @@ from so101_teleop.constants import CALIBRATION_DIR
 from so101_teleop.pose_mapping import JOINTS, limits_from_calibration
 
 import sponsors
-from live import ws_vision
 from telemetry import Telemetry
 
 sponsors.load_env()
@@ -440,11 +439,6 @@ async def api_tts(req):
     return web.Response(body=audio, content_type="audio/mpeg") if audio else web.Response(status=204)
 
 
-async def api_vision(req):
-    body = await json_body(req)
-    return web.json_response(await sponsors.vision(str(body.get("image", ""))))
-
-
 async def api_command(req):
     body = await json_body(req)
     out = await sponsors.command(str(body.get("text", "")))
@@ -480,10 +474,6 @@ async def auth(req, handler):
     return resp
 
 
-async def ai_page(_):   # the AI-only page: calibrate once, then Gemini drives
-    return web.FileResponse(WEB_DIR / "ai.html", headers={"Cache-Control": "no-store"})
-
-
 async def index(_):
     return web.FileResponse(WEB_DIR / "index.html", headers={"Cache-Control": "no-store"})
 
@@ -504,15 +494,12 @@ def build_app() -> web.Application:
     app.add_routes(
         [
             web.get("/", index),
-            web.get("/ai", ai_page),
             web.get("/ws", ws_handler),
             web.get("/api/state", api_state),
             web.get("/api/sessions", api_sessions),
             web.get("/api/telemetry", api_telemetry),
             web.post("/api/tts", api_tts),
             web.post("/api/command", api_command),
-            web.post("/api/vision", api_vision),
-            web.get("/ws/vision", ws_vision),
             web.post("/api/{cmd}", api_cmd),
             web.static("/models", MODEL_DIR),
             web.static("/web", WEB_DIR),

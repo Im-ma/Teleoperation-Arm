@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 JOINTS = ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll", "gripper"]
-WRIST_ROLL_CAP = 172.0
+WRIST_ROLL_CAP = 147.0
 
 
 def limits_from_calibration(calibration: dict[str, Any] | None) -> dict[str, tuple[float, float]]:

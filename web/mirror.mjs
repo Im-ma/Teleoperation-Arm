@@ -11,7 +11,7 @@
 export const T = { LOCK_MS: 500, SEEN_MS: 150, LOST_MS: 400, BACK_MS: 500, GONE_MS: 1500, HINT_MS: 700, LIVE_HINT_MS: 2500 };
 
 export function createMirror() {
-  let state = "BOOT", since = 0, last = 0, seen = 0, lock = 0, lastOk = 0, arm = null, why = "lost";
+  let state = "BOOT", since = 0, last = 0, seen = 0, lock = 0, lastOk = 0, arm = null;
   let hint = null, hintSince = 0;
 
 
@@ -61,17 +61,15 @@ export function createMirror() {
           out.hint = o.person?.framing.hint || null;
           out.say = settled(T.LIVE_HINT_MS);
           // lost the arm, or the bridge's own dead-man stopped us
-          // (a robot stop is not "I lost you": say which it was)
           if (now - lastOk > T.LOST_MS || (o.live && !o.engaged && now - since > 1500)) {
-            why = now - lastOk > T.LOST_MS ? "lost" : "robot";
-            out.actions.push("disengage"); out.say = why; lock = 0; go("HOLD");
+            out.actions.push("disengage"); out.say = "lost"; lock = 0; go("HOLD");
           }
           break;
         case "HOLD":
           // paused where it stopped; carry on only once the hand is back on the robot's hand
           lock = p && p.align >= 1 ? lock + dt : 0;
           out.ring = p ? Math.max(p.align ?? 0, Math.min(1, lock / T.BACK_MS)) : 0;
-          out.hint = why === "robot" ? "robot" : p ? "realign" : "lost";
+          out.hint = p ? "realign" : "lost";
           if (lock >= T.BACK_MS) { lock = 0; out.actions.push("engage"); out.resume = true; out.say = "welcome"; lastOk = now; go("MIRRORING") }
           break;
       }
