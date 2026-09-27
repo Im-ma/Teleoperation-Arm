@@ -63,9 +63,7 @@ export function arm3D(W, side, Hw) {
   if (len(fw) < 0.3 * n) { fw = unit(cross(flat(sub(S, v3(W[o]))), up)); if (fw[2] > 0) fw = scale(fw, -1) }
   fw = unit(fw);
   const inPlane = v => Math.atan2(dot(v, up), dot(v, fw)) * D;
-  const E = v3(W[e]);
-  const out = { ang: Math.asin(clamp(dot(hv, up) / n, -1, 1)) * D, reach: n / arm, depth: Math.abs(hv[2]) / n,
-    upper: inPlane(sub(E, S)), fore: inPlane(sub(v3(W[wr]), E)) };
+  const out = { ang: Math.asin(clamp(dot(hv, up) / n, -1, 1)) * D, reach: n / arm, depth: Math.abs(hv[2]) / n };
   if (Hw) {
     const a = unit(sub(v3(Hw[9]), v3(Hw[0])));
     out.hand = inPlane(a);
@@ -79,10 +77,7 @@ export function handFeatures(Hn, Hw, F, fore, w, h) {
   const P = i => [Hn[i].x * w, Hn[i].y * h];
   const hv = sub(P(9), P(0)), out = { handLen: len(hv) };
   out.wrist = wrap(ang(F, hv) - ang(F, fore));
-  // the claw's two jaws: the thumb, and the other four fingers together (the middle of their tips),
-  // so one finger misread can't open or close it
-  const tips = [8, 12, 16, 20].map(P), mid = scale(tips.reduce((s, p) => [s[0] + p[0], s[1] + p[1]], [0, 0]), 0.25);
-  out.grip = len(sub(P(4), mid)) / (out.handLen + 1e-6);
+  out.grip = len(sub(P(4), P(8))) / (out.handLen + 1e-6);
   if (Hw) {
     const a = unit(sub(v3(Hw[9]), v3(Hw[0]))), k = sub(v3(Hw[17]), v3(Hw[5]));
     const kp = sub(k, scale(a, dot(k, a)));
@@ -131,15 +126,12 @@ export function armFeatures(L, W, hands, arm, w, h) {
   // Reaching toward or away from the camera, the flat image can't see the hand's height or distance (the
   // arm looks short and its angle is noise). Blend over to the 3D landmarks as the arm leaves the picture plane.
   const H0 = pickHand(L, hands, side, F, w, h);
-  const r3 = arm3D(W, side, H0.Hw), k = r3 ? clamp((r3.depth - 0.3) / 0.4, 0, 1) : 0;
+  const r3 = arm3D(W, side, H0.Hw);
   if (r3) {
+    const k = clamp((r3.depth - 0.3) / 0.4, 0, 1);
     f.reachAng += k * wrap(r3.ang - f.reachAng);
     f.reach += k * (r3.reach - f.reach);
   }
-  // Each segment's own angle (0 = level, + up), for the shoulder (upper arm) and elbow (forearm) motors.
-  f.upper = f.lift; f.fore = ang(F, fore);
-  if (r3) { f.upper += k * wrap(r3.upper - f.upper); f.fore += k * wrap(r3.fore - f.fore) }
-  conf.upper = k > 0.5 ? conf.reachAng : conf.lift; conf.fore = k > 0.5 ? conf.reachAng : conf.elbow;
   const { pan, yaw } = panAngle(W, side);
   f.pan = pan; conf.pan = pan === undefined || yaw > 25 ? 0 : conf.lift;
   const { H, Hw, Hs } = H0;

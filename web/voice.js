@@ -14,10 +14,9 @@ export const LINES = {
   face: "Turn to face the camera.",
   arm: "Show me your arm and your hand.",
   estop: "Stopping.",
-  robot: "The robot stopped. Paused. Line your hand up with the robot's hand to try again.",
   realign: "Paused. Move your hand onto the robot's hand to carry on.",
 };
-const PRIORITY = { estop: 3, lost: 3, robot: 3, locked: 2, welcome: 2, bye: 2 };
+const PRIORITY = { estop: 3, lost: 3, locked: 2, welcome: 2, bye: 2 };
 const GAP = 2500, SAME = 8000, MAX_REPEATS = 2;
 
 export function createVoice({ onCaption }) {

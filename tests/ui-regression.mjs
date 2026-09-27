@@ -14,13 +14,10 @@ import * as mapping from '../web/mapping.mjs';
 import * as angles from '../web/angles.mjs';
 import { FeatureFilter } from '../web/filters.mjs';
 import { createMirror } from '../web/mirror.mjs';
-import { createGoal } from '../web/goal.mjs';
-import { createMoves } from '../web/moves.mjs';
-import { createWatch } from '../web/watch.mjs';
 import { estimateSyncQuality } from '../web/ui-metrics.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-const BASE = 'b594200';   // robot code the UI is integrated against (IK mirroring + accuracy)
+const BASE = 'cdc6952';   // robot code the UI is integrated against (IK mirroring + accuracy)
 const git = (...args) => execFileSync('git', args, { cwd: root, maxBuffer: 64 * 1024 * 1024 });
 const original = path => git('show', `${BASE}:${path}`);
 const current = path => readFileSync(resolve(root, path));
@@ -116,7 +113,7 @@ function makeHarness(source) {
     createElement: () => new Element(), body: new Element(), hidden: false, addEventListener: addListener,
     removeEventListener() {}, dispatchEvent: dispatch };
   const sandbox = { console, URLSearchParams, Date, Math, Promise, Error, Object, Number,
-    ...mapping, ...angles, FeatureFilter, createMirror, createGoal, createMoves, createWatch, document,
+    ...mapping, ...angles, FeatureFilter, createMirror, document,
     location: { search: '', hash: '', protocol: 'http:', host: 'offline.invalid' },
     localStorage: { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) },
     navigator: { permissions: { query: async () => ({ state: 'prompt' }) }, mediaDevices: {
