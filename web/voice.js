@@ -4,7 +4,7 @@ export const LINES = {
   hello: "Hi! Copy my pose to take control. Arm out, forearm up.",
   strike: "Strike the goalpost. Arm out to the side, forearm up.",
   locked: "Got you. I'm your arm now.",
-  lost: "I lost you. I'll wait right here.",
+  lost: "I lost you. Paused. Put your hand back where my hand is to carry on.",
   welcome: "Welcome back.",
   bye: "Heading home. Strike the pose any time.",
   closer: "Come a little closer.",
@@ -14,8 +14,10 @@ export const LINES = {
   face: "Turn to face the camera.",
   arm: "Show me your arm and your hand.",
   estop: "Stopping.",
+  robot: "The robot stopped. Paused. Line your hand up with the robot's hand to try again.",
+  realign: "Paused. Move your hand onto the robot's hand to carry on.",
 };
-const PRIORITY = { estop: 3, lost: 3, locked: 2, welcome: 2, bye: 2 };
+const PRIORITY = { estop: 3, lost: 3, robot: 3, locked: 2, welcome: 2, bye: 2 };
 const GAP = 2500, SAME = 8000, MAX_REPEATS = 2;
 
 export function createVoice({ onCaption }) {

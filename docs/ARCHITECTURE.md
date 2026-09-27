@@ -37,6 +37,7 @@ Rule: **nothing from the cloud can move the robot.** All API keys live in `.env`
   - **Human side:** fixed anatomical numbers (`lift 0` = arm out sideways, `elbow 90`, `pan 0`).
   - **Robot side:** the ready pose: arm straight forward and level with the claw turned 90° (`READY_DEFAULT` in serve.py, or `poses.json`). Every connect, page load or R homes back there. To change it, **Pose by hand**, then **Save as ready**.
 - **Captured at lock time:** wrist, roll and grip-open are the noisy ones. We record them during the 1 s lock hold, which the person is doing anyway, so it's still zero clicks.
+- **Motors (bottom to top), all driven together:** base = upper arm's heading; shoulder = upper arm up/down, elbow = forearm up/down (the robot elbow bends only ~20° up past straight, so a forearm raised further is split across both links); wrist flex = where the hand points, in the arm's vertical plane (3D hand landmarks), held still while the wrist twists; wrist roll = forearm twist, held still while the hand tilts; gripper = thumb vs the other four fingers (open/close only). The bridge scales every joint's step by the same factor, so a combined move starts and ends together.
 - **Hinge angles are measured in the image** (`web/angles.mjs`), in a body frame built from the shoulder line.
   - This works because the hinges' rotation axes point at the camera in this pose.
   - The angles don't change with distance or with where you stand, so the robot "adjusts to you" without rescaling.
@@ -56,12 +57,9 @@ Rule: **nothing from the cloud can move the robot.** All API keys live in `.env`
 | BOOT | HOMING | page and WebSocket up, robot connected. Camera starts on its own |
 | HOMING | WAITING | robot within 5° of the goalpost |
 | WAITING | ACQUIRING | a person is framed OK and tracked well for 300 ms |
-| ACQUIRING | MIRRORING | goalpost held for 1 s (ring fills). Robot barely moves because both sides are already at the reference |
-| MIRRORING | HOLD | shoulder/elbow tracking lost for more than 400 ms. Robot holds |
-| HOLD | REACQUIRE | good tracking back within 10 s |
-| REACQUIRE | MIRRORING | same person (similar size and position), gone less than 3 s. Filters reset, 2.5 s smooth blend back |
-| REACQUIRE | ACQUIRING | a different person, or gone longer: strike the pose again |
-| HOLD | HOMING | nobody back for 10 s. Glide home, then wait |
+| ACQUIRING | MIRRORING | arm stretched straight out held for 0.5 s (ring fills). Wrist, roll and grip-open zeros are captured then |
+| MIRRORING | HOLD | arm tracking lost for more than 400 ms. The robot pauses where it is |
+| HOLD | MIRRORING | the person's hand is back within 5 cm of the robot's hand (ring fills as it gets closer), held 0.5 s. No re-sync, no homing: HOLD never gives up. Only Stop or R start over |
 
 **Safety upgrades in bridge.py:**
 - The bridge gets its own 400 ms dead-man. Today it lives only in the browser.

@@ -114,9 +114,13 @@
             <button class="btn ghost" id="home" type="button" disabled>⌂ Goalpost pose</button>
             <button class="btn ghost" id="test" type="button" disabled>Test joints</button>
             <button class="btn ghost" id="limp" type="button" disabled>✋ Pose by hand</button>
+            <button class="btn ghost" id="visionMode" type="button" title="V: the AI watches each movement and the robot copies where it ends">👁 AI vision: off</button>
+            <button class="btn ghost" id="liveMode" type="button" title="L: AI mode. Gemini watches the camera and drives the robot; no tracker, no voice">🤖 AI mode: off</button>
+            <button class="btn ghost" id="goalMode" type="button" title="T: the robot goes where your arm ends up, not the path">🎯 Goal mode: off</button>
             <button class="btn" id="saveReady" type="button" hidden>Save as goalpost</button>
           </div>
           <div class="msg" id="botMsg"></div>
+          <div id="vision" hidden><img id="visionStrip" alt="Your last movement, as the AI saw it" style="width:100%;border-radius:8px;display:block;margin-top:8px"><div class="msg" id="visionText"></div></div>
         </div>
       </div>
     </details>
